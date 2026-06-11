@@ -1,106 +1,89 @@
-# [Project Name]
+# VertiGate
 
-> **📝 Template Instructions:** Replace all bracketed placeholders `[like this]` with your project-specific information. Remove sections that don't apply to your project. Delete this instruction block when you're done.
+[![GitHub release](https://img.shields.io/github/v/release/SainsburyWellcomeCentre/fablabs-VertiGate?style=flat-square&cacheSeconds=3600)](https://github.com/SainsburyWellcomeCentre/fablabs-VertiGate/releases)
+[![License](https://img.shields.io/badge/license-CC%20BY--SA%204.0-blue.svg?style=flat-square)](LICENSE)
+[![GitHub issues](https://img.shields.io/github/issues/SainsburyWellcomeCentre/fablabs-VertiGate?style=flat-square)](https://github.com/SainsburyWellcomeCentre/fablabs-VertiGate/issues)
 
-![GitHub release](https://img.shields.io/github/v/release/SainsburyWellcomeCentre/[your-repo].svg)
+A [Harp](https://harp-tech.org/)-compatible vertical gate controller driven by a Dynamixel XM430-W210 servo motor.
 
-[Brief one-line description of what your project does]
-
-> **Note:** [Any important warnings or notes about the project]
-
-<img src=".img/[main-image].png" alt="[Image Description]" width="800"/>
-
-[Detailed description of the project, its purpose, and the problem it solves. Include context about why this project is useful and what applications it serves.]
+VertiGate exposes a Harp device (WhoAmI **5350**) over USB CDC that controls a vertically-travelling gate. A Dynamixel XM430-W210 servo provides the actuation. The gate can be commanded to any of 256 positions (0 = fully down, 255 = fully up) and reports its status back as a Harp event.
 
 ## 🔧 Features
 
-- [Feature 1 - describe key functionality]
-- [Feature 2 - describe key functionality]
-- [Feature 3 - describe key functionality]
-- [Feature 4 - describe key functionality]
-- [Add/remove features as needed]
-
-## 🌐 View Online (eCAD)
-
-View the complete electronic design project online via [Altium 365 Viewer](https://sainsburywellcomecentre.github.io/fablabs-documentation/#[your-repo])
+- Harp-protocol USB CDC interface (1 Mbaud) with clock synchronisation
+- Full-range position control via a single 0–255 command byte
+- Configurable speed and torque limits at runtime
+- Fine position offset register for mechanical calibration
 
 ## 🚀 Getting Started
 
-[Provide step-by-step instructions for initial setup and basic usage]
+### Hardware connections
+TBC
+### Firmware installation
 
-1. [First step - setup/installation]
-2. [Second step - configuration]
-3. [Third step - basic operation]
+1. **Flash MicroPython** — download the latest RP2354 MicroPython UF2 from [micropython.org](https://micropython.org/download/RPI_PICO2/) and copy it to the board while holding BOOTSEL.
+2. **Install mpremote** — `pip install mpremote`
+3. **Copy firmware files** — from the `firmware/` directory, copy everything to the board:
 
-<img src=".img/[usage-image].png" alt="[Usage Description]" width="300"/>
+   ```bash
+   mpremote cp -r firmware/. :
+   ```
 
-[Additional usage instructions, tips, or references to external resources]
+4. **Install dependencies** — run the following commands to install the required libraries from GitHub:
 
-[If applicable, mention any measurement tools or validation methods]
+   ```bash
+   mpremote mip install github:SainsburyWellcomeCentre/micropython-dynamixel
+   mpremote mip install github:SainsburyWellcomeCentre/micropython-microharp
+   ```
 
-## ⚙️ Configuration & Tuning _(if applicable)_
+5. **Reset the board** — the device will enumerate as a USB CDC serial port and announce itself on the Harp bus.
 
-[If your project requires calibration or fine-tuning, describe the process here]
+### Basic usage
 
-## 🔧 [Configuration/Calibration] Guidelines
+Send an **Operation** command (register `0x21`) with a single byte:
 
-- [Step 1 - describe calibration procedure]
-- [Step 2 - describe parameter adjustment]
-- [Operating ranges and recommended settings]
-  > [Important notes or warnings about configuration]
+| Value     | Effect                        |
+| --------- | ----------------------------- |
+| `0`       | Lower gate fully (DOWN)       |
+| `255`     | Raise gate fully (UP)         |
+| `1`–`254` | Move to intermediate position |
 
-<div align="center">
-  <img src=".img/[configuration-image].png" alt="[Configuration Description]" width="600"/>
-</div>
+Monitor gate state by reading or subscribing to the **Status** event (register `0x22`).
+
+A ready-to-use Bonsai workflow is provided in `bonsai/example.bonsai`.
+
+## ⚙️ Configuration & Tuning
+
+### Register table
+
+| Address | Name      | Access    | Description                                                                 |
+| ------- | --------- | --------- | --------------------------------------------------------------------------- |
+| `0x21`  | Operation | W         | Target position (0 = down, 255 = up, 1–254 = intermediate)unit: 1.2mm       |
+| `0x22`  | Status    | R + Event | `0x00` Idle · `0x01` UP · `0x02` DOWN · `0x03` MOVING                       |
+| `0x23`  | Speed     | R/W       | Profile velocity (0–255, default 255) unit: 0.38mm/s                        |
+| `0x24`  | Torque    | R/W       | Current limit (0–127, default 35) unit:0.36kgf·mm                           |
+| `0x25`  | Offset    | R/W       | Fine position offset in encoder counts (−128 to +127, default 0) unit: 25μm |
+
+### Calibration guidelines
+
+- Write the **Offset** register (`0x25`) to fine-tune the fully-up endpoint without mechanical adjustment.
+- Tune **Torque** (`0x24`) if the gate stalls or applies too much force at end-stops.
+- Reduce **Speed** (`0x23`) for smoother, slower motion.
+  > The gate disables motor torque automatically when it reaches the fully-down position to prevent motor stress.
 
 ## 💻 Software Requirements
 
-To access the source design files:
-
-- **[eCAD Software] [Version]** or newer _(for electronic design files)_  
-  Academic licenses available via [[Software] Education]([link])
-- **[mCAD Software] [Version]** or newer _(for mechanical design files)_  
-  Academic licenses via [[Software] Education]([link])
-- **[Additional Software]** _(if applicable for firmware/programming)_
+- **MicroPython** for RP2354 — [micropython.org](https://micropython.org/download/RPI_PICO/)
+- **mpremote** — `pip install mpremote` _(for firmware upload)_
+- **Bonsai** — [bonsai-rx.org](https://bonsai-rx.org/) _(for the example workflow)_
 
 ## 📜 License
 
-**Sainsbury Wellcome Centre hardware is released under** [Creative Commons Attribution-ShareAlike 4.0 International](http://creativecommons.org/licenses/by-sa/4.0/).
-
-You are free to:
-
-- **Share** — copy and redistribute the material in any medium or format
-- **Adapt** — remix, transform, and build upon the material for any purpose
-
-Under the following terms:
-
-- **Attribution** — Give appropriate credit, link to the license, and indicate changes.
-- **ShareAlike** — Distribute your contributions under the same license.
-- **No additional restrictions** — Don’t apply legal or technological measures that prevent others from doing anything the license permits.
+**Sainsbury Wellcome Centre code, firmware, and software is released under the [BSD 3-Clause License](https://opensource.org/license/bsd-3-clause).**
 
 > For the full legal text, see [LICENSE](LICENSE).
 
-## 📚 References _(if applicable)_
-
-[If your project is based on or references academic work, list citations here]
-
-```bibtex
-@ARTICLE{AuthorYear,
-  title     = "[Paper Title]",
-  author    = "[Author Names]",
-  journal   = "[Journal Name]",
-  volume    = "[Volume]",
-  number    = "[Number]",
-  pages     = "[Pages]",
-  year      = "[Year]",
-  url       = "[URL]",
-  doi       = "[DOI]"
-}
-```
-
 ## 🤝 Contributing
-
-[If you want to accept contributions, add guidelines here]
 
 1. Fork the repository
 2. Create a feature branch
@@ -109,14 +92,12 @@ Under the following terms:
 
 ## ❤ Contributors
 
- <a href = "https://github.com/sainsburywellcomecentre/[your-repo]/graphs/contributors">
-   <img src = "https://contrib.rocks/image?repo=sainsburywellcomecentre/[your-repo]" alt="Contributors"/>
+ <a href = "https://github.com/sainsburywellcomecentre/fablabs-VertiGate/graphs/contributors">
+   <img src = "https://contrib.rocks/image?repo=sainsburywellcomecentre/fablabs-VertiGate" alt="Contributors"/>
  </a>
 
 ## 📧 Contact
 
-[Contact information or support channels]
-
-- **Author**: [Your Name]
-- **Email**: [contact-email]
-- **Website**: [FabLabs Documentation](https://sainsburywellcomecentre.github.io/fablabs-documentation/#[your-repo])
+- **Author**: [@DCisHurt](https://github.com/DCisHurt)
+- **Email**: [yuhsuan.chen@ucl.ac.uk](mailto:yuhsuan.chen@ucl.ac.uk)
+- **Website**: [FabLabs](https://sainsburywellcomecentre.github.io/fablabs-documentation/#fablabs-VertiGate)
