@@ -98,6 +98,6 @@ A ready-to-use Bonsai workflow is provided in `bonsai/example.bonsai`.
 
 ## 📧 Contact
 
-- **Author**: [@DCisHurt](https://github.com/DCisHurt)
-- **Email**: [yuhsuan.chen@ucl.ac.uk](mailto:yuhsuan.chen@ucl.ac.uk)
+- **Author**: [Sainsbury Wellcome Centre FabLabs](https://www.sainsburywellcome.org/content/fablab)
+- **Email**: [swc.fablabs@ucl.ac.uk](mailto:swc.fablabs@ucl.ac.uk)
 - **Website**: [FabLabs](https://sainsburywellcomecentre.github.io/fablabs-documentation/#fablabs-VertiGate)
