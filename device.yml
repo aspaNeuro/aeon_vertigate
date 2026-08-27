@@ -1,0 +1,54 @@
+%YAML 1.1
+---
+# yaml-language-server: $schema=https://harp-tech.org/draft-02/schema/device.json
+device: VertiGate
+whoAmI: 5350
+firmwareVersion: "0.1"
+hardwareTargets: "0.1"
+registers:
+  Operation:
+    address: 33
+    access: Write
+    type: U8
+    description: >-
+      Commands the gate position. 0 lowers the gate fully down, 255 raises it
+      fully up, and any value in between moves the gate to the corresponding
+      target position.
+  Status:
+    address: 34
+    access: Event
+    type: U8
+    maskType: GateStatus
+    description: Reports the current state of the gate.
+  Speed:
+    address: 35
+    access: Write
+    type: U8
+    description: >-
+      Movement speed of the gate, mapped onto the Dynamixel profile velocity.
+  Torque:
+    address: 36
+    access: Write
+    type: U8
+    minValue: 0
+    maxValue: 127
+    description: >-
+      Torque (current) limit applied to the gate motor. Values are masked to
+      the lower 7 bits (0-127).
+  Offset:
+    address: 37
+    access: Write
+    type: S8
+    minValue: -128
+    maxValue: 127
+    description: >-
+      Position offset applied to the fully-raised target position, in
+      motor units.
+groupMasks:
+  GateStatus:
+    description: Enumerates the possible states of the gate.
+    values:
+      Idle: {value: 0, description: The gate is stationary and not homed to an end position.}
+      Up: {value: 1, description: The gate is fully raised up.}
+      Down: {value: 2, description: The gate is fully lowered down.}
+      Moving: {value: 3, description: The gate is moving towards a target position.}
