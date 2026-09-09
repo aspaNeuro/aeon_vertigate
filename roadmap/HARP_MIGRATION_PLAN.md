@@ -202,39 +202,50 @@ moment to fix it.
 Problems with the map as it stands:
 
 1. **`Operation` is a bad name.** It reads as a sibling of core `R_OPERATION_CTRL` (addr 10).
-   Every comparable Harp motion device uses a functional name.
-2. **Magic values.** `0` and `255` mean "home" and "fully up" while `1–254` mean "position".
-   That is a polymorphic payload in spirit; the spec's *Register polymorphism* section
-   explicitly warns against overloading one register's semantics.
-3. **No position readback.** There is no way to ask where the gate is, only which state-machine
+   Every comparable Harp motion device uses a functional name. It is also **write-only, so the
+   register dump skips it** — a connecting controller cannot learn the commanded target (§3.3).
+2. **No position readback.** There is no way to ask where the gate is, only which state-machine
    bucket it is in. Comparable devices expose a measured value as an Event
    (`faststepper` → `Encoder`, `syringepump` → `Protocol`).
-4. **No stop, no enable/disable, no re-home command.** `Gate.stop()` exists in firmware but is
+3. **No stop, no enable/disable, no re-home command.** `Gate.stop()` exists in firmware but is
    unreachable over the wire. Homing only ever happens once, at boot.
-5. **No error/fault register.** Dynamixel stalls, comms timeouts and out-of-travel conditions
+4. **No error/fault register.** Dynamixel stalls, comms timeouts and out-of-travel conditions
    are invisible to the host. The spec's guidance is that such conditions should surface as an
    event on a dedicated register rather than as error replies.
-6. **No `EnableEvents`.** `device.syringepump`, `device.stepperdriver` and `device.behavior`
-   all carry an `EnableEvents` bitmask so hosts can gate event traffic. It is a de-facto
-   ecosystem convention.
+5. **No way to gate event traffic.** Once a `Position` event streams, a host that only cares
+   about end-stop transitions must filter it downstream. Harp devices provide an off switch —
+   either a standalone `EnableEvents` mask (`syringepump`, `stepperdriver`, `behavior`) or paired
+   bits inside `Control` (`faststepper`).
 
 Proposed map, aligned with `faststepper` / `syringepump` naming:
 
 | Addr | Name | Type | Access | Purpose |
 | --- | --- | --- | --- | --- |
-| 32 | `Control` | U8 | Write | bitmask: `EnableMotor`, `DisableMotor`, `Stop`, `Calibrate` |
-| 33 | `TargetPosition` | U16 | Read, Write | absolute target (µm or 1.2 mm counts) — one meaning, no magic values |
+| 32 | `Control` | U8 | Write | bitmask, all 8 bits: `EnableMotor` / `DisableMotor`, `Stop`, `Calibrate`, `Enable`/`DisablePositionEvent`, `Enable`/`DisableTelemetryEvent` |
+| 33 | `TargetPosition` | **U8** | **Read**, Write | absolute target, unchanged 1.2 mm scale — gains read access so it appears in the register dump |
 | 34 | `GateState` | U8 | Read, Event | groupMask `Idle` / `Up` / `Down` / `Moving` / `Error` |
 | 35 | `Speed` | U8 | Read, Write | as today, with default/min/max declared |
 | 36 | `Torque` | U8 | Read, Write | as today |
 | 37 | `CalibrationOffset` | S8 | Read, Write | renamed from `Offset`, per syringepump convention |
-| 38 | `Position` | U16 | Read, Event | *measured* position reported by the servo |
+| 38 | `Position` | U16 | Read, Event | *measured* position from the servo, in encoder counts (25 µm) |
 | 39 | `MotorFault` | U8 | Read, Event | bitmask: `Stall`, `Overload`, `CommsTimeout`, `TravelLimit` |
-| 40 | `EnableEvents` | U8 | Read, Write | bitmask gating `GateState` / `Position` / `MotorFault` |
-| 41 *(optional)* | `ServoTelemetry` | U16×n | Read, Event | present current / temperature / voltage |
+| 40 *(optional)* | `ServoTelemetry` | U16×n | Read, Event | present current / temperature / voltage |
 
-Keeping `Up` / `Down` as a convenience is fine — express it as two `Control` bits, not as
-sentinel values inside a position register.
+Keeping `Up` / `Down` as a convenience is fine — express it as two `Control` bits alongside the
+position register.
+
+> **Decision (2026-09-09): address 33 stays U8.** 1.2 mm is adequate for this mechanism, so the
+> target is not widened. This is what makes the whole map **purely additive on the wire** — every
+> existing register keeps its address and payload type, and only unused addresses gain registers.
+> Existing Bonsai workflows keep working unmodified.
+>
+> An earlier draft proposed U16 and described `0`/`255` as "magic values" barred by the spec's
+> *Register polymorphism* section. That reasoning was wrong: `lower_down()` calls `move(0)`,
+> `raise_up()` calls `move(255)`, and `move()` is a plain linear map, so the endpoints are
+> ordinary values on the same scale and the special-casing is only an idempotence guard.
+>
+> See [`REGISTER_MAP_COMPARISON.md`](REGISTER_MAP_COMPARISON.md) for the full implemented-vs-proposed
+> analysis, the cost breakdown, and a reduced subset if less churn is wanted.
 
 Whatever map is chosen, every register must be **dump-ready**: each `defaultValue` declared in
 `device.yml` mirrored into register storage at construction, and `on_read` handlers on
@@ -709,7 +720,7 @@ equivalent of a part number now** — it is referenced by the release convention
 | **0 — Decisions** *(blocking)* | Lock the register map (§2.2). Confirm the `Fablabs.*` namespace (§4). Agree the WhoAmI block with Aeon + FabLabs (§1.1). Decide Altium vs KiCad and the part-number scheme (§5, §7). Confirm staying on MicroPython (§3.2). | ~1 day |
 | **1 — Identity** *(long lead time)* | One WhoAmI PR to `harp-tech/whoami` covering the **whole SWC fleet**, not just VertiGate. Do this first — it is the only item gated on an external maintainer. | ~1 day |
 | **2 — Metadata** | Rewrite `device.yml` against draft-03 with the new map, correct `access` arrays, defaults, min/max, and units in descriptions. Validate against the published schema. | ~2 days |
-| **3 — Firmware** | Implement the new map. Fix the S8 decode, reply-value mismatches, version arguments, blocking-boot hazard, event coalescing. Add `MotorFault` and `EnableEvents`. Move homing behind `Control.Calibrate`. | 1–2 weeks |
+| **3 — Firmware** | Implement the new map. Fix the S8 decode, reply-value mismatches, version arguments, blocking-boot hazard, event coalescing. Add `MotorFault` and the `Control` event-gating bits. Move homing behind `Control.Calibrate`. | 1–2 weeks |
 | **3b — Upstream microharp** *(parallel)* | `R_RESET_DEV` SAVE/RST_EE with non-volatile storage; `R_VERSION` PROTOCOL/CORE_ID/INTERFACE_HASH population; `R_CLOCK_CONFIG` semantics audit. | ~1 week |
 | **4 — Repo + interfaces** | Adopt the `aeon_lineardrive` layout (§5 Option C), per-directory licenses, copy its `.config/dotnet-tools.json` and `software/build/`, generate and commit the Bonsai + Python interfaces, rewrite the Bonsai example against typed operators. | ~3 days *(mostly copy-and-rename from `aeon_lineardrive`)* |
 | **5 — Release process** | Copy `Aeon.LinearDrive.yml`; add the freshness gate and schema validation. Fill in `RELEASE_NOTE.md` from the FabLabs template; adopt `hw*-fw*` release titles; attach a prebuilt firmware image. | ~2 days |
