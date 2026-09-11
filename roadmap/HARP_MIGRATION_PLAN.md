@@ -389,6 +389,82 @@ running at 255/35 and sitting at the bottom of its travel. Nothing raises an err
 wrong data in the experimental record. Fix alongside the register redesign (§2.2) — the cost is
 initialising storage at construction plus a handful of `on_read` handlers.
 
+### 3.4 Version registers: what tooling actually reads
+
+The two version problems listed in §3 are **not equally urgent**, and the difference only becomes
+clear once you check what consumes each field.
+
+#### The deprecated block is what everything reads
+
+`Bonsai.Harp`'s `Device` operator reads registers 0, 1, 2, 6, 7 on every connect and prints them
+to the Bonsai console; `Bonsai.Harp.Design`'s Device Setup dialog shows the same block. Nothing in
+`bonsai-rx/harp` references `R_VERSION` (19) or its interface hash at all, and `HarpVersion` is
+major.minor only.
+
+So the **deprecated** registers are the live ones in practice. Side by side with a current
+harp-tech device (`OutputExpander`, WhoAmI 1108):
+
+| Device Setup field | Register(s) | OutputExpander | VertiGate today | Should be |
+| --- | --- | --- | --- | --- |
+| DeviceName | 12 | Output Expander | VertiGate | ✓ |
+| FirmwareVersion | 6, 7 | 2.2 | **1.0** | 0.1 |
+| CoreVersion | 4, 5 | 1.13 | **0.0** | 1.13 |
+| HardwareVersion | 1, 2 | 1.0 | **1.0** | 0.1 |
+| AssemblyVersion | 3 | 0 | 0 | ✓ — deprecated, 0 is normal |
+| WhoAmI | 0 | 1108 | 5350 | ✓ once registered (§1) |
+| SerialNumber | 13 | 65535 | 0 | — |
+
+Three of seven fields are wrong or blank, and they are the fields a person reads when identifying
+a device on a rig.
+
+**`CoreVersion` (registers 4–5)** is the version of the Harp *core library* the firmware is built
+on. Formally that is not the protocol version — but Champalimaud's core versions track the
+protocol document, so in practice a device reporting `1.13` is saying it implements Harp Device
+spec **v1.13.0**, which is the current and only tag on `harp-tech/protocol`. Set VertiGate's to
+`1.13` to match that reading, rather than to microharp's own release number.
+
+#### Fixes
+
+- **`fw_version` / `hw_version`:** pass `fw_version=(0, 1)`, `hw_version=(0, 1)` to
+  `HarpDevice(...)`. One line. microharp otherwise defaults both to `(1, 0)`.
+- **`CoreVersion`:** awkward — `install_common_registers` has **no parameter for it**, unlike the
+  firmware and hardware versions. Either add the argument upstream, or write registers 4–5
+  directly after construction.
+- **Stop hand-maintaining versions in two files.** `device.yml` and `main.py` drifting apart is
+  exactly how this happened. Generate a `firmware/_version.py` from `device.yml` at deploy/CI time
+  and guard it with the same freshness gate as the C# interface (§6).
+
+#### `R_VERSION` PROTOCOL / CORE_ID / INTERFACE_HASH — no consumer yet
+
+Worth doing eventually, but nothing reads these today, and each has an unresolved question:
+
+- **PROTOCOL** (bytes 0–2): `1.13.0`. A microharp constant, not per-device.
+- **CORE_ID** (bytes 9–11): three characters naming the core. **There is no registry** — the spec
+  gives one line and no examples, and no shipped core implements `R_VERSION` at all (`core.pico`
+  and AIND's both stop at `TAG = 17`). Picking a code (`mpy`?) means asking harp-tech first.
+- **INTERFACE_HASH** (bytes 12–31): SHA-1 of `device.yml`. Three traps: (a) `device.yml` is not on
+  the board, so it must be computed at build time into the generated version module; (b) the spec
+  says little-endian, but a digest is a 20-byte string rather than an integer and **no reference
+  implementation exists anywhere in the ecosystem** to disambiguate — whoever ships first defines
+  it; (c) line endings change the digest, so pin `device.yml` to LF in `.gitattributes` *before*
+  baking in any hash, or Windows checkouts and CI will disagree permanently.
+
+Also note `device.yml`'s `firmwareVersion` schema is major.minor only, while `R_VERSION` wants
+major.minor.patch — the patch bytes have no source in the schema. Either fix them at `0`, or take
+them from the release tag.
+
+#### Order
+
+1. Pass `fw_version` / `hw_version` — fixes what Bonsai reads, prints and displays.
+2. Set `CoreVersion` to `1.13`.
+3. Add the `.gitattributes` LF rule for `device.yml`.
+4. Generate `_version.py`; wire the freshness gate.
+5. Ask harp-tech: a CORE_ID for MicroPython, and the INTERFACE_HASH byte order.
+6. Extend microharp to accept core version, protocol, core id, hash and patch versions — fleet-wide
+   benefit, per the upstream split in §3.
+
+Steps 1–3 are worth doing regardless. Steps 4–6 only pay off once something validates the hash.
+
 ---
 
 ## 4. Generated interfaces — entirely missing
@@ -534,19 +610,132 @@ published through the Altium 365 Viewer via `fablabs-documentation`. But `fablab
 creating `hardware/eCAD/` — a migration may be in flight, and this is a FabLabs-wide call, not a
 VertiGate one.
 
-### Licensing — less contradictory than it first appears
+### Licensing — adopt the Aeon model (CERN-OHL), not the FabLabs CC BY-SA convention
 
-The FabLabs README template states: *"Sainsbury Wellcome Centre hardware is released under
-Creative Commons Attribution-ShareAlike 4.0 International."* Combined with VertiGate's own README
-line about code being BSD 3-Clause, the house convention is clearly **hardware CC BY-SA 4.0,
-code/firmware BSD 3-Clause**.
+Two SWC conventions currently diverge, and VertiGate has to pick one before it publishes any
+hardware.
 
-So the root `LICENSE` (BSD 3-Clause) is correct for the code, and the CC BY-SA badge at the top of
-the README is correct for hardware — they are just presented as though one governs the whole
-repo. Fix by adding per-directory `LICENSE` files (`hardware/LICENSE` = CC BY-SA,
-`firmware/LICENSE` and `software/LICENSE` = BSD-3) and stating both in the README, exactly as
-`aeon_lineardrive` and `fablabs-automatic-shelter` already do. This is a documentation fix, not a
-licensing decision.
+| | FabLabs today | Aeon proposal ([`aeon_roadmap#69`](https://github.com/SainsburyWellcomeCentre/aeon_roadmap/issues/69)) |
+| --- | --- | --- |
+| Hardware | **CC BY-SA 4.0**, full text as the single root `LICENSE` | **CERN-OHL-W 2.0** |
+| Software / firmware | BSD-3 (stated in the README only) | BSD-3 |
+| Third-party vendor CAD | bundled in the repo | **Available Components** — referenced by MPN, not redistributed |
+
+`fablabs-valve-driver`, `-automatic-shelter`, `-lick-detector-piezo` and `-environmental-sensor`
+all carry the CC BY-SA 4.0 text as their root `LICENSE`.
+
+**Decision: follow the Aeon model.** CC BY-SA is a poor fit for hardware on four counts:
+
+1. **It does not define "source" for hardware.** ShareAlike triggers on "Adapted Material", but CC
+   has no answer to whether a fabricated board, or a Gerber, is an adaptation of a schematic.
+   CERN-OHL defines *Covered Source* and *Product* explicitly and states when reciprocity attaches
+   to a manufactured object.
+2. **No patent grant.** That is the difference between "you may copy my drawings" and "you may
+   build and sell the thing". CERN-OHL includes one.
+3. **Creative Commons themselves advise against it** for software, and steer hardware projects
+   toward purpose-built licences.
+4. **No Available Components concept.** This is the formal basis for referencing proprietary
+   vendor CAD without redistributing it — the mechanism `aeon_roadmap#69` depends on, and which
+   CC BY-SA simply lacks.
+
+**Variant: CERN-OHL-W**, matching the Aeon default. Reciprocal on the design files, while a rig
+that merely *uses* a VertiGate is unaffected. `-S` would be awkward for a device embedded in
+larger setups; `-P` gives away reciprocity for no benefit here.
+
+#### How the two licences actually relate
+
+Neither is a subset of the other, and they are **not compatible**. Each grants and requires things
+the other does not:
+
+| | CC BY-SA 4.0 | CERN-OHL-W 2.0 |
+| --- | --- | --- |
+| Attribution | ✅ | ✅ |
+| Copyleft / reciprocity | ✅ on "Adapted Material" | ✅ on conveying a **Product** |
+| **Patent licence** | ❌ **explicitly excluded** — §2(b)(2): *"Patent and trademark rights are not licensed under this Public License"* | ✅ §7.1: *"perpetual, worldwide… irrevocable patent license to Make, have Made, use, offer to sell, sell, import"* |
+| Defined "Source" for hardware | ❌ no concept | ✅ Covered Source / Complete Source |
+| Available Components | ❌ none | ✅ parts available *"with sufficient rights and information… to enable it to be Made… or sourced and used to Make the Product"* |
+| Obligation attaches to physical objects | ❌ unclear — copyright subsists in the drawing, not the thing built from it | ✅ §3.2 / §4.1, triggered by conveying a Product |
+| Sui generis database rights | ✅ §4 | ❌ |
+| Anti-DRM / TPM clause | ✅ | ❌ |
+| Moral rights waiver | ✅ | ❌ |
+
+CERN-OHL is stronger on the hardware-specific axes; CC BY-SA is broader on general-copyright
+axes. They are orthogonal in places, not nested.
+
+CC BY-SA 4.0 does have a "Compatible License" mechanism, but Creative Commons designates only
+specific licences under it (GPLv3, one-way) and **CERN-OHL is not among them**. So CC BY-SA
+material cannot be absorbed into a CERN-OHL project, nor the reverse.
+
+**What that means for migrating the FabLabs estate.** A copyright holder is not bound by the
+licence it previously chose: where SWC authored the designs, SWC can license future versions under
+CERN-OHL-W regardless of what shipped before. Two caveats:
+
+1. **CC licences are irrevocable.** Anything already published under CC BY-SA stays available under
+   CC BY-SA permanently. The licence changes going *forward*; past releases cannot be clawed back.
+2. **External contributions need consent.** If anyone outside SWC contributed hardware design to
+   those repos, relicensing their contribution requires their agreement. Check contributor lists
+   before announcing a change.
+
+For VertiGate this is moot — no hardware files exist, so there is nothing to relicense.
+
+**It is also not either/or per repository.** CERN-OHL governs *design* files; CC BY-SA remains a
+good choice for documentation, photos and diagrams. That is precisely why the target below is a
+licence **map** rather than a single root `LICENSE`.
+
+> Licence reading, not legal advice. Worth UCL's research office confirming before anything is
+> announced across repositories.
+
+#### Immediate defect, independent of the above
+
+VertiGate is the only `fablabs-*` repo with **no hardware files at all**. Its root `LICENSE` is
+BSD 3-Clause while the README badge says CC BY-SA 4.0 — so the badge advertises a licence for
+content that does not exist, and misrepresents the licence on the content that does. Point the
+badge at BSD-3 until hardware lands. One line, worth doing now.
+
+#### Target structure, when hardware lands (Phase 6)
+
+```
+LICENSE                  a licensing map, not a licence text
+LICENSES/
+  BSD-3-Clause.txt
+  CERN-OHL-W-2.0.txt
+firmware/LICENSE         BSD-3
+software/LICENSE         BSD-3
+hardware/LICENSE         CERN-OHL-W
+hardware/mCAD/README.md  Available Components: MPN + vendor download link per part
+```
+
+Plus SPDX headers, and a standing rule never to commit portal-sourced CAD.
+
+Note the argument in `aeon_roadmap#69` that **absence of a licence does not fix this**: leaving
+hardware unlicensed until someone decides still distributes any third-party files, and leaves
+SWC's own PCB work all-rights-reserved. So this is decided *before* hardware is published, not
+after — the same cheap-now / expensive-later shape as the register map.
+
+#### Worth flagging to the FabLabs team
+
+The third-party CAD problem may already be live across the estate. Four published repos carry
+vendor CAD under `ConvertedComponents/`:
+
+| Repo | Files |
+| --- | --- |
+| `fablabs-monitor-blanking` | 50 |
+| `fablabs-lick-detector-piezo` | 39 |
+| `fablabs-valve-driver` | 19 |
+| `fablabs-environmental-sensor` | 18 |
+
+The filenames carry `CMP-xxx-xxxx-x` identifiers — SamacSys / Component Search Engine numbering —
+alongside vendor part numbers such as TE's `BNC-TE-5227222` and Samtec's `853-004-213R00Y`. Those
+are the portals `aeon_roadmap#69` identifies as granting use-in-your-own-design rights only.
+
+This is an inference from filenames, not an audit, and needs checking rather than acting on. But
+if it holds, the position is worse than `aeon_lineardrive`'s was: a single root CC BY-SA does not
+merely redistribute those files, it purports to **license them share-alike to the public** —
+overclaiming rights on third-party IP, which is the second mistake `aeon_roadmap#69` names.
+
+VertiGate's advantage is that it is empty: it can adopt the right structure from the start rather
+than remediate, which makes it a reasonable pilot for whatever FabLabs settles on. The actual call
+belongs to the team, and probably to UCL's research office.
 
 Keep `bonsai/example.bonsai`, but relocate it (`software/bonsai/` or `examples/`) and strip the
 hard-coded `COM21` port. `aeon_lineardrive` also ships a `.bonsai/` directory with
@@ -717,7 +906,7 @@ equivalent of a part number now** — it is referenced by the release convention
 
 | Phase | Work | Estimate |
 | --- | --- | --- |
-| **0 — Decisions** *(blocking)* | Lock the register map (§2.2). Confirm the `Fablabs.*` namespace (§4). Agree the WhoAmI block with Aeon + FabLabs (§1.1). Decide Altium vs KiCad and the part-number scheme (§5, §7). Confirm staying on MicroPython (§3.2). | ~1 day |
+| **0 — Decisions** *(blocking)* | Lock the register map (§2.2). Confirm the `Fablabs.*` namespace (§4). Agree the WhoAmI block with Aeon + FabLabs (§1.1). Decide Altium vs KiCad and the part-number scheme (§5, §7). Confirm staying on MicroPython (§3.2). Take the licensing decision to FabLabs (§5) — **CERN-OHL-W proposed**, aligning with `aeon_roadmap#69`. | ~1 day |
 | **1 — Identity** *(long lead time)* | One WhoAmI PR to `harp-tech/whoami` covering the **whole SWC fleet**, not just VertiGate. Do this first — it is the only item gated on an external maintainer. | ~1 day |
 | **2 — Metadata** | Rewrite `device.yml` against draft-03 with the new map, correct `access` arrays, defaults, min/max, and units in descriptions. Validate against the published schema. | ~2 days |
 | **3 — Firmware** | Implement the new map. Fix the S8 decode, reply-value mismatches, version arguments, blocking-boot hazard, event coalescing. Add `MotorFault` and the `Control` event-gating bits. Move homing behind `Control.Calibrate`. | 1–2 weeks |
