@@ -144,7 +144,7 @@ owners:
     copyright: SainsburyWellcomeCentre
 
 devices:
-  5350:
+  3000:
     <<: *swc
     name: VertiGate
     repositoryUrl: https://github.com/SainsburyWellcomeCentre/fablabs-VertiGate
@@ -152,9 +152,15 @@ devices:
 ```
 
 `name` must match `^[a-zA-Z][a-zA-Z0-9_]*$` — `VertiGate` is fine. The id pattern in
-`whoami.json` accepts 4-digit values, so 5350 is format-legal; it simply needs to be claimed.
+`whoami.json` accepts 3- and 4-digit values, so anything in the proposed range is format-legal;
+it simply needs to be claimed.
 
-**Until this merges, 5350 is squatted, not owned.**
+> **VertiGate's id changes.** The current `5350` sits outside the proposed SWC range (§1.1), so
+> adopting the block moves VertiGate to an id within it — `3000` above, pending the teams' own
+> allocation. That touches `device.yml`, `main.py`, `bonsai/example.bonsai` and the README. Cheap
+> now, since nothing is released and no interface package exists; not cheap later.
+
+**Until this merges, the id is squatted, not owned.**
 
 **Precedent:** AIND added its own `aind` owner key and ten devices (1400–1411) pointing at
 repositories in its own GitHub organisation. This is a routine, low-friction PR — the registry
@@ -168,12 +174,38 @@ Per §0.6, **no SWC device holds a registered WhoAmI**: `aeon_lineardrive` ships
 claims an unregistered 5350. Two of those placeholders are actively deployed, and `0x1234` is a
 value another institution could legitimately be allocated.
 
-Since one PR is being opened anyway, **register the whole SWC fleet at once** — a contiguous
-block (5350–5360, say) covering VertiGate, LinearDrive, AutomaticShelter and VirtHunt, following
-AIND's 1400–1411 pattern. The marginal cost over registering VertiGate alone is a few lines of
-YAML; the alternative is four separate PRs and four separate negotiations, and meanwhile
-`0000`/`0x1234` stay in the field. Confirm the block with the Aeon and FabLabs teams before
-submitting, since it commits their devices too.
+Since one PR is being opened anyway, **register the whole SWC fleet at once** rather than one id
+per device, following AIND's 1400–1411 pattern but sized for an institution running several
+device-producing groups.
+
+**Proposed reservation: `3000`–`3500` for SWC devices.**
+
+The range is clear — the registry's highest current allocation is 2110, and nothing above 2110 is
+assigned — and it is well away from both the Champalimaud clusters and AIND's 1400s, so it leaves
+room for the existing owners to grow contiguously.
+
+Initial allocations to propose in the same PR:
+
+| Id | Device | Repo |
+| --- | --- | --- |
+| 3000 | `VertiGate` | `fablabs-VertiGate` |
+| 3001 | `LinearDrive` | `aeon_lineardrive` (currently ships `0000`) |
+| 3002 | `AutomaticShelter` | `fablabs-automatic-shelter` (currently ships `0x1234`) |
+| 3003 | `VirtHunt` | `virt-hunt-drv` (sets none) |
+
+Two things to prepare for:
+
+- **500 ids is a large ask.** AIND took twelve. Expect harp-tech to want a rationale — the honest
+  one is that SWC has multiple independent groups building Harp devices (FabLabs, Aeon, and
+  others), and a block avoids a stream of one-off PRs and the placeholder ids that appear while
+  people wait. If the maintainers push back, a smaller block that can be extended later is a
+  reasonable fallback; the important part is having *a* range rather than scattered ids.
+- **A reserved block needs an owner.** Blocks rot when nobody tracks them. Whoever holds it should
+  keep a short allocation list — ideally in `fablabs-documentation` — so the next device takes the
+  next free id rather than inventing another `0x1234`.
+
+Confirm the range and the initial allocations with the Aeon and FabLabs teams before submitting,
+since the PR commits their devices too.
 
 ---
 
@@ -576,10 +608,7 @@ global.json
 .img/                        FabLabs house convention: README imagery
 device.yml
 firmware/                    MicroPython application (stays where it is)
-hardware/
-  eCAD/                      Altium project + Assembly/Fabrication OutJobs
-  mCAD/                      gate assembly CAD (Inventor), STEP/DXF
-  README.md
+hardware/                    → git submodule: the whole hardware design, own repo
 software/
   Fablabs.VertiGate/         generated Device.Generated.cs + csproj + README
   build/                     shared Bonsai Foundation props
@@ -607,8 +636,78 @@ repo without them.
 **Altium vs KiCad:** every existing `fablabs-*` and Aeon board is Altium (`.PcbDoc`/`.SchDoc`),
 published through the Altium 365 Viewer via `fablabs-documentation`. But `fablabs-kicad-library`
 ("global KiCAD library for all PCB projects") is active. Establish which VertiGate targets before
-creating `hardware/eCAD/` — a migration may be in flight, and this is a FabLabs-wide call, not a
-VertiGate one.
+the hardware repository is populated — a migration may be in flight, and this is a FabLabs-wide
+call, not a VertiGate one.
+
+### Hardware as a submodule
+
+**Proposal: the entire hardware design lives in its own repository, included here as a git
+submodule at `hardware/`. This repository then contains only firmware, host software and
+metadata.**
+
+Why this is the better split:
+
+- **The licence boundary becomes a repository boundary.** This repo is BSD-3, full stop. The
+  hardware repo carries CERN-OHL-W and whatever component terms apply. No licence map, no
+  per-directory `LICENSE` files, no prose explaining which paragraph governs which folder.
+- **Hardware and firmware version independently.** They already do — AIND's release convention
+  encodes `hw{major}.{minor}.{patch}-fw{major}.{minor}.{patch}` precisely because they move at
+  different rates. Separate repos make that natural instead of something the release title has to
+  paper over.
+- **The pin is a compatibility record.** A submodule pinned at a commit states, in a
+  machine-checkable way, which hardware revision a given firmware was validated against. For a lab
+  device where several board revisions circulate, that is worth more than the convenience it costs.
+- **Binary CAD stays out of the firmware history.** Altium and Inventor files are large and opaque
+  to diff. Software contributors cloning for a firmware fix do not pay for them.
+
+#### Constraint: submodules cannot be subdirectories
+
+Git submodules bring in a whole repository, not a path within one. So "`hardware/` is a submodule"
+rules out a single shared `fablabs-hardware` repo containing every device — that would drop every
+device's CAD into VertiGate's `hardware/`.
+
+The workable shapes are therefore:
+
+| Shape | Implication |
+| --- | --- |
+| **One hardware repo per device** (e.g. `fablabs-VertiGate-hardware`) | ✅ clean pin, clean licence boundary. 2× repo count across the estate. |
+| Shared repo holding *only* reusable component models | ✅ works, but then per-device CAD stays in the device repo, which is not what is proposed here |
+| Shared repo holding all devices' hardware | ❌ not expressible as a submodule at `hardware/` |
+
+So this implies **a hardware repo per device**. Worth confirming that the FabLabs team is happy
+with roughly double the repositories before committing to it.
+
+#### What this diverges from
+
+Both existing SWC conventions keep hardware in the device repo — every `fablabs-*` repo has
+`eCAD/` and `mCAD/` alongside `firmware/`, and so does `aeon_lineardrive`. This is a FabLabs-wide
+call, not a VertiGate one, and VertiGate is a convenient place to try it precisely because it has
+no hardware files yet.
+
+Three practical frictions to plan for:
+
+- `git clone --recursive`, or an empty `hardware/` and a confused colleague. Worth a line in the
+  README and in CI checkout steps.
+- `altium-viewer.json` sits at the repo root in the `fablabs-*` repos, and the Altium 365 Viewer
+  integration via `fablabs-documentation` points at a repository. Check what moves with the CAD.
+- Releases split into two streams. AIND already solves this by having each firmware release state
+  the hardware revisions it is compatible with — adopt that wording rather than inventing one.
+
+#### The provenance rule still applies, wherever the files live
+
+A submodule changes *where* files are hosted, not *whether* SWC distributes them. A public
+hardware repo containing SamacSys- or TraceParts-derived models carries exactly the same exposure,
+just relocated. So the split is still by provenance:
+
+| Model | Where it goes |
+| --- | --- |
+| SWC's own design and component models | the hardware repo, under CERN-OHL-W |
+| Redistributable third-party (official vendor STEP, models carrying an explicit grant such as CC BY-ND) | the hardware repo, with attribution preserved |
+| Portal-sourced, non-transferable (SamacSys, TraceParts, GrabCAD, Ultra Librarian) | **nowhere in git** — referenced by MPN as CERN-OHL *Available Components* |
+
+Moving encumbered files into a separate repository does not make distributing them lawful. It only
+makes the audit one-time, and `fablabs-kicad-library` is the existing precedent for shared
+component assets that could hold the redistributable ones.
 
 ### Licensing — adopt the Aeon model (CERN-OHL), not the FabLabs CC BY-SA convention
 
@@ -694,16 +793,27 @@ badge at BSD-3 until hardware lands. One line, worth doing now.
 
 #### Target structure, when hardware lands (Phase 6)
 
+With hardware moved to its own repository (see "Hardware as a submodule" above), the licence map
+mostly disappears — the repository boundary carries it instead:
+
+**This repository:**
+
 ```
-LICENSE                  a licensing map, not a licence text
-LICENSES/
-  BSD-3-Clause.txt
-  CERN-OHL-W-2.0.txt
-firmware/LICENSE         BSD-3
-software/LICENSE         BSD-3
-hardware/LICENSE         CERN-OHL-W
-hardware/mCAD/README.md  Available Components: MPN + vendor download link per part
+LICENSE          BSD-3-Clause — firmware, host software, device.yml
+hardware/        submodule; governed entirely by the hardware repo's own terms
 ```
+
+**The hardware repository:**
+
+```
+LICENSE          CERN-OHL-W-2.0 — the design we authored
+mCAD/README.md   Available Components: MPN + vendor download link per part
+```
+
+This is the main practical argument for the split: instead of per-directory `LICENSE` files and a
+root map explaining which paragraph governs which folder, each repository has one licence and says
+so once. Documentation, photos and diagrams can stay CC BY-SA in either repo if that is preferred;
+that choice no longer has to be encoded in a map.
 
 Plus SPDX headers, and a standing rule never to commit portal-sourced CAD.
 
@@ -907,7 +1017,7 @@ equivalent of a part number now** — it is referenced by the release convention
 | Phase | Work | Estimate |
 | --- | --- | --- |
 | **0 — Decisions** *(blocking)* | Lock the register map (§2.2). Confirm the `Fablabs.*` namespace (§4). Agree the WhoAmI block with Aeon + FabLabs (§1.1). Decide Altium vs KiCad and the part-number scheme (§5, §7). Confirm staying on MicroPython (§3.2). Take the licensing decision to FabLabs (§5) — **CERN-OHL-W proposed**, aligning with `aeon_roadmap#69`. | ~1 day |
-| **1 — Identity** *(long lead time)* | One WhoAmI PR to `harp-tech/whoami` covering the **whole SWC fleet**, not just VertiGate. Do this first — it is the only item gated on an external maintainer. | ~1 day |
+| **1 — Identity** *(long lead time)* | One WhoAmI PR to `harp-tech/whoami` reserving **3000–3500 for SWC** and allocating ids across the fleet, not just VertiGate (§1.1). Do this first — it is the only item gated on an external maintainer. Note VertiGate's id moves off 5350. | ~1 day |
 | **2 — Metadata** | Rewrite `device.yml` against draft-03 with the new map, correct `access` arrays, defaults, min/max, and units in descriptions. Validate against the published schema. | ~2 days |
 | **3 — Firmware** | Implement the new map. Fix the S8 decode, reply-value mismatches, version arguments, blocking-boot hazard, event coalescing. Add `MotorFault` and the `Control` event-gating bits. Move homing behind `Control.Calibrate`. | 1–2 weeks |
 | **3b — Upstream microharp** *(parallel)* | `R_RESET_DEV` SAVE/RST_EE with non-volatile storage; `R_VERSION` PROTOCOL/CORE_ID/INTERFACE_HASH population; `R_CLOCK_CONFIG` semantics audit. | ~1 week |
@@ -920,8 +1030,9 @@ equivalent of a part number now** — it is referenced by the release convention
 
 ## 10. Risks
 
-- **WhoAmI 5350 is unclaimed** and nothing stops another submission taking it. Highest-urgency,
-  lowest-effort item.
+- **No SWC device holds a registered WhoAmI**, and nothing stops another institution being
+  allocated the ids currently in the field (`5350`, `0x1234`, `0000`). The proposed 3000–3500
+  reservation (§1.1) is the highest-urgency, lowest-effort item in the plan.
 - **No MicroPython precedent in the ecosystem** *(downgraded from the first draft)*. Every other
   device is C/C++ (ATxmega, Pico SDK), and `micropython-microharp` is SWC's own core rather than
   an upstream-blessed one. But AIND demonstrates that running your own core, your own namespace
