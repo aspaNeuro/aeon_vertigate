@@ -1,0 +1,20 @@
+.vs/
+/artifacts/
+**/.bonsai/Settings/
+**/.bonsai/Packages/
+**/.bonsai/Bonsai.exe*
+launchSettings.json
+*.user
+
+# Bonsai editor state
+*.layout
+
+# MicroPython firmware development
+.vscode/
+.micropico
+firmware/lib/
+firmware/typings/
+firmware/build/
+firmware/test.py
+__pycache__/
+*.pyc
