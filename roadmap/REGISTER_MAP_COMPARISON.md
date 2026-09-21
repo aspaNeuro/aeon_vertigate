@@ -8,15 +8,20 @@
 
 | Addr | **Implemented today** | **Proposed** | Change |
 | --- | --- | --- | --- |
-| 32 | *(unused)* | `Control` U8, Write. Motor enable/disable, `Stop`, `Calibrate`, and on/off bits for the two streaming events | **new** |
-| 33 | `Operation` U8, **Write-only**. 0 = down, 255 = up, linear in between | `TargetPosition` U8, **Read** + Write. Same 1.2 mm scale | **name + read access** |
-| 34 | `Status` U8, Read + Event. `Idle/Up/Down/Moving` | `GateState` U8, Read + Event. Adds `Error` | rename + one value |
-| 35 | `Speed` U8, Read + Write | `Speed` U8, Read + Write | **unchanged** (declare defaults) |
-| 36 | `Torque` U8, Read + Write | `Torque` U8, Read + Write | **unchanged** (declare defaults) |
-| 37 | `Offset` S8, Read + Write | `CalibrationOffset` S8, Read + Write | **rename only** |
-| 38 | — | `Position` U16, Read + Event. Measured, in encoder counts | **new** |
-| 39 | — | `MotorFault` U8, Read + Event | **new** |
-| 40 | — | `ServoTelemetry` U16×n, Read + Event *(optional)* | **new** |
+| 32 | *(unused)* | `Control` U8, `Write`. Firmware `WRITE_ONLY`. Motor enable/disable, `Stop`, `Calibrate`, and on/off bits for the two streaming events | **new** |
+| 33 | `Operation` U8, `Write`. Firmware `WRITE_ONLY`. 0 = down, 255 = up, linear in between | `TargetPosition` U8, `Write`. Firmware `READ_WRITE`. Same 1.2 mm scale | **name + read access** |
+| 34 | `Status` U8, `Event`. Firmware `READ_ONLY | EVENT`. `Idle/Up/Down/Moving` | `GateState` U8, `Event`. Firmware `READ_ONLY | EVENT`. Adds `Calibrating` and `Error` | rename + two values |
+| 35 | `Speed` U8, `Write`. Firmware `READ_WRITE` | `Speed` U8, `Write`. Firmware `READ_WRITE` | **unchanged** (declare defaults) |
+| 36 | `Torque` U8, `Write`. Firmware `READ_WRITE` | `Torque` U8, `Write`. Firmware `READ_WRITE` | **unchanged** (declare defaults) |
+| 37 | `Offset` S8, `Write`. Firmware `READ_WRITE` | `CalibrationOffset` S8, `Write`. Firmware `READ_WRITE` | **rename only** |
+| 38 | — | `Position` U16, `Event`. Firmware `READ_ONLY | EVENT`. Measured, in encoder counts | **new** |
+| 39 | — | `MotorFault` U8, `Event`. Firmware `READ_ONLY | EVENT` | **new** |
+| 40 | — | `ServoTelemetry` U16×n, `Event`. Firmware `READ_ONLY | EVENT` *(optional)* | **new** |
+
+Each cell shows two things. The first is the `device.yml` `access` value. It is one word that
+names the purpose of the register: `Event` for reports, `Write` for settings and commands.
+`Read` is implied. The second is the firmware flag in microharp. It decides what the device
+answers on the wire and what the register dump includes. See plan §2.1.
 
 **All five existing registers keep their address and payload type.** Speed, Torque and Status do
 not change. Offset and Operation are renamed. Operation also gains read access. Everything else is
@@ -99,7 +104,7 @@ instead of error replies to unrelated writes.
 
 - **`Operation` is write-only, so it does not appear in the register dump.** microharp's
   `_dump_all_registers()` skips registers without read access. A controller that connects today
-  never learns the commanded target. A Read + Write `TargetPosition` appears in the dump. See plan
+  never learns the commanded target. A `TargetPosition` with firmware flag `READ_WRITE` appears in the dump. See plan
   §3.3.
 - **`Operation` reads like a sibling of core `R_OPERATION_CTRL` (address 10)**, which is a
   different thing. Every comparable device uses a functional name.
@@ -195,7 +200,7 @@ the full map later:
 | Addr | Register | Why |
 | --- | --- | --- |
 | 32 | `Control`, `Stop` + `Calibrate` only | unlocks existing code, fixes the boot hazard |
-| 38 | `Position` Read + Event | makes the device observable |
+| 38 | `Position`, `Event` | makes the device observable |
 | 34 | `GateState`, add `Error` | lets faults be reported at all |
 
 Keep `Operation` at 33 as it is, fill only the first four `Control` bits, and defer `MotorFault`
@@ -210,7 +215,7 @@ What each register in the proposed map is for, what it carries, and what it cost
 "Exists" means the register is already in [`device.yml`](../device.yml) and
 [`register.py`](../firmware/register.py) today.
 
-### `Control`: address 32, U8, Write. **New**
+### `Control`: address 32, U8, `Write`. Firmware `WRITE_ONLY`. **New**
 
 A command register. Writing a bit triggers an action; it does not store a setting. This is the
 standard Harp pattern for verbs (`device.faststepper` has `Control`, `device.syringepump` has
@@ -254,7 +259,7 @@ use a new register at an unused address without breaking anything.
 on/off bits are a flag check in the event task. `Calibrate` is the expensive bit (see §5),
 because `_calibrate_home()` must first become non-blocking, with a timeout and a failure path.
 
-### `TargetPosition`: address 33, U8, Read + Write. **Exists** (as `Operation`)
+### `TargetPosition`: address 33, U8, `Write`. Firmware `READ_WRITE`. **Exists** (as `Operation`)
 
 Where you want the gate to go. `0` = fully down, `255` = fully up, linear in between at about
 1.2 mm per count. **Address, type and scale do not change.** See the decision note in §1.
@@ -265,7 +270,7 @@ was last commanded.
 
 **Cost:** trivial. Optionally fix the 250–255 clamp from §2.4 at the same time.
 
-### `GateState`: address 34, U8, Read + Event. **Exists** (as `Status`)
+### `GateState`: address 34, U8, `Event`. Firmware `READ_ONLY | EVENT`. **Exists** (as `Status`)
 
 The gate's state machine, emitted as an event on every change. Existing values keep their
 numbers, so nothing on the wire changes:
@@ -276,14 +281,15 @@ numbers, so nothing on the wire changes:
 | 1 | `Up` | at the fully-raised end |
 | 2 | `Down` | at the fully-lowered end |
 | 3 | `Moving` | moving towards a target |
-| 4 | `Error` | **new**. Motion failed; see `MotorFault` |
+| 4 | `Calibrating` | **new**. Moving to the lower end stop to find home |
+| 0xFF | `Error` | **new**. Motion or calibration failed; see `MotorFault`. A sentinel value, so 5 and up stay free for normal states |
 
 Note the `Idle` ambiguity from §2.3. It currently means both "at a position in between" and
 "position unknown". Adding `Position` (38) resolves this in practice, without more states.
 
 **Cost:** small. One added value, set from whatever fault path is built.
 
-### `Speed`: address 35, U8, Read + Write. **Exists, unchanged**
+### `Speed`: address 35, U8, `Write`. Firmware `READ_WRITE`. **Exists, unchanged**
 
 Movement speed, mapped to the Dynamixel profile velocity. The firmware applies
 `profile_velocity = (value & 0xFF) + 60`. The fixed `VEL_OFFSET` of 60 means that a written `0`
@@ -293,7 +299,7 @@ Two fixes belong here. Both are in the migration plan already and are not map ch
 `defaultValue: 255` and copy it into register storage at construction (plan §3.3), and make the
 write reply report the value actually applied, not the raw byte (plan §3).
 
-### `Torque`: address 36, U8, Read + Write. **Exists, unchanged**
+### `Torque`: address 36, U8, `Write`. Firmware `READ_WRITE`. **Exists, unchanged**
 
 Current limit for the motor, masked to the low 7 bits (0 to 127), default 35. It sets how hard
 the gate pushes at the end stops, and so whether it stalls or crushes.
@@ -301,7 +307,7 @@ the gate pushes at the end stops, and so whether it stalls or crushes.
 Same two fixes as `Speed`. Also worth documenting: the setter switches `torque_enabled` off and
 then on, so **writing this register while the gate is holding will briefly drop the gate**.
 
-### `CalibrationOffset`: address 37, S8, Read + Write. **Exists** (as `Offset`), rename only
+### `CalibrationOffset`: address 37, S8, `Write`. Firmware `READ_WRITE`. **Exists** (as `Offset`), rename only
 
 Fine adjustment of the fully-raised end, in encoder counts of 25 µm each, range −128 to +127
 (about ±3.2 mm). Lets you trim the up position without moving hardware.
@@ -312,7 +318,7 @@ Renamed to match the ecosystem convention (`device.syringepump` uses `Calibratio
 **This register is broken today.** `payload[0]` on a memoryview gives an unsigned byte, so
 negative values arrive as 128 to 255 and clamp to +127. Negative offsets do not work (plan §3).
 
-### `Position`: address 38, U16, Read + Event. **New**
+### `Position`: address 38, U16, `Event`. Firmware `READ_ONLY | EVENT`. **New**
 
 The gate's **measured** position, read from the servo encoder, in encoder counts (0 to about
 12000, 25 µm each). Different from `TargetPosition`, which is only what was asked for.
@@ -328,7 +334,7 @@ observe at 25 µm. See the note in §1.
 `on_read` handler and a decision on event rate: on change with a deadband, or periodic only while
 moving. Avoid a fast periodic event. Every read is a transaction on the 1 Mbaud Dynamixel bus.
 
-### `MotorFault`: address 39, U8, Read + Event. **New**
+### `MotorFault`: address 39, U8, `Event`. Firmware `READ_ONLY | EVENT`. **New**
 
 Why a move failed. Emitted as an event, so failures appear immediately instead of being guessed
 from a gate that never reaches its target.
@@ -360,7 +366,7 @@ and has no such register. Both patterns are current.
 Event on/off is now handled by bits 4 to 7 of `Control` (32). See that entry for the reasoning
 and the trade-off.
 
-### `ServoTelemetry`: address 40, U16 × n, Read + Event. **New, optional**
+### `ServoTelemetry`: address 40, U16 × n, `Event`. Firmware `READ_ONLY | EVENT`. **New, optional**
 
 **This is the register you asked about.** It exposes the Dynamixel's own health readings: the
 state of the *motor*, as opposed to the state of the *gate*. `Position` and `GateState` answer

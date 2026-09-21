@@ -225,10 +225,18 @@ PR. The PR commits their devices too.
 
 - **Old schema URL.** The file points at `draft-02`. The protocol repo now ships `draft-03`
   (`schema/device.json`, `core.json`, `registers.json`). Update it.
-- **`access` says too little.** `Status` is `Event` only, but the firmware registers it as
-  `READ_ONLY | EVENT`, and the README says "R + Event". `Speed`, `Torque` and `Offset` are
-  `Write` in YAML but `READ_WRITE` in firmware. Use the array form: `access: [Read, Event]`,
-  `access: [Read, Write]`. A mismatch here produces a wrong Bonsai or Python interface.
+- **`access` is correct as it is.** An earlier draft said `Status` should be `[Read, Event]`
+  and the settings `[Read, Write]`. The idea was to match the firmware flags `READ_ONLY | EVENT`
+  and `READ_WRITE`. That was wrong. Checked on 2026-09-21:
+  - The schema defines `access` as *"the expected use of the register"*.
+  - The protocol makes every register readable.
+  - The generator emits `ReadXAsync` for every register. It never checks the `Read` flag.
+  - Only `Write` and `Event` change the output. `Write` adds `WriteXAsync`. `Event` adds the
+    event operators.
+  - No harp-tech device uses `[Read, Event]`. `device.behavior` uses plain `Event` for its four
+    event registers and plain `Write` for its twenty settings.
+
+  Keep the single-value form. The firmware access flags are a separate matter (§3.3).
 - **Unused schema fields.** `defaultValue` (Speed 255, Torque 35, Offset 0), `volatile: false`
   on the three config registers, `minValue` / `maxValue` on Speed.
 - **Units live only in the README** (1.2 mm/count, 0.38 mm/s, 0.36 kgf·mm, 25 µm). Put them in
@@ -264,14 +272,14 @@ Proposed map, using `faststepper` / `syringepump` naming:
 | Addr | Name | Type | Access | Purpose |
 | --- | --- | --- | --- | --- |
 | 32 | `Control` | U8 | Write | bitmask, all 8 bits: `EnableMotor` / `DisableMotor`, `Stop`, `Calibrate`, `Enable`/`DisablePositionEvent`, `Enable`/`DisableTelemetryEvent` |
-| 33 | `TargetPosition` | **U8** | **Read**, Write | absolute target, same 1.2 mm scale. Gains read access so it appears in the register dump |
-| 34 | `GateState` | U8 | Read, Event | groupMask `Idle` / `Up` / `Down` / `Moving` / `Error` |
-| 35 | `Speed` | U8 | Read, Write | as today, with default/min/max declared |
-| 36 | `Torque` | U8 | Read, Write | as today |
-| 37 | `CalibrationOffset` | S8 | Read, Write | renamed from `Offset`, per syringepump convention |
-| 38 | `Position` | U16 | Read, Event | *measured* position from the servo, in encoder counts (25 µm) |
-| 39 | `MotorFault` | U8 | Read, Event | bitmask: `Stall`, `Overload`, `CommsTimeout`, `TravelLimit` |
-| 40 *(optional)* | `ServoTelemetry` | U16×n | Read, Event | present current / temperature / voltage |
+| 33 | `TargetPosition` | **U8** | Write | absolute target, same 1.2 mm scale. Firmware gains read access so it appears in the register dump |
+| 34 | `GateState` | U8 | Event | groupMask `Idle` / `Up` / `Down` / `Moving` / `Calibrating` / `Error` (`0xFF`) |
+| 35 | `Speed` | U8 | Write | as today, with default/min/max declared |
+| 36 | `Torque` | U8 | Write | as today |
+| 37 | `CalibrationOffset` | S8 | Write | renamed from `Offset`, per syringepump convention |
+| 38 | `Position` | U16 | Event | *measured* position from the servo, in encoder counts (25 µm) |
+| 39 | `MotorFault` | U8 | Event | bitmask: `Stall`, `Overload`, `CommsTimeout`, `TravelLimit` |
+| 40 *(optional)* | `ServoTelemetry` | U16×n | Event | present current / temperature / voltage |
 
 Keeping `Up` / `Down` as a convenience is fine. Express it as two `Control` bits next to the
 position register.
