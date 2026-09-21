@@ -52,7 +52,7 @@ Write one byte to the **Operation** register (`0x21`):
 
 Read the **Status** register (`0x22`), or subscribe to its event, to follow the gate state.
 
-A Bonsai workflow is provided in `bonsai/example.bonsai`.
+A Bonsai workflow is provided in `docs/workflows/GateControl.bonsai`.
 
 ## ⚙️ Configuration & Tuning
 
