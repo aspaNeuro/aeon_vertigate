@@ -6,6 +6,14 @@ whoAmI: 5350
 firmwareVersion: "0.1"
 hardwareTargets: "0.1"
 registers:
+  Control:
+    address: 32
+    access: Write
+    type: U8
+    maskType: ControlFlags
+    description: >-
+      Commands for the gate. Each bit is one command. Writing a bit runs the
+      command. The register stores no state.
   Operation:
     address: 33
     access: Write
@@ -44,6 +52,18 @@ registers:
     description: >-
       Position offset applied to the fully-raised target position, in
       motor units.
+bitMasks:
+  ControlFlags:
+    description: Commands accepted by the Control register.
+    bits:
+      EnableMotor: {value: 0x01, description: Turn the motor torque on. The gate holds its position.}
+      DisableMotor: {value: 0x02, description: Turn the motor torque off. The gate can be moved by hand.}
+      Stop: {value: 0x04, description: Stop the current movement and hold the position.}
+      Calibrate: {value: 0x08, description: Move the gate to the lower end stop and record it as home.}
+      EnablePositionEvent: {value: 0x10, description: Start sending Position events.}
+      DisablePositionEvent: {value: 0x20, description: Stop sending Position events.}
+      EnableTelemetryEvent: {value: 0x40, description: Start sending ServoTelemetry events.}
+      DisableTelemetryEvent: {value: 0x80, description: Stop sending ServoTelemetry events.}
 groupMasks:
   GateStatus:
     description: Enumerates the possible states of the gate.
@@ -52,3 +72,5 @@ groupMasks:
       Up: {value: 1, description: The gate is fully raised up.}
       Down: {value: 2, description: The gate is fully lowered down.}
       Moving: {value: 3, description: The gate is moving towards a target position.}
+      Calibrating: {value: 4, description: The gate is moving to the lower end stop to find home.}
+      Error: {value: 0xFF, description: The last movement or calibration failed.}

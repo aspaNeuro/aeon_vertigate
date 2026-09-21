@@ -1,5 +1,4 @@
 from dynamixel import Dynamixel, DynamixelModel
-import time
 from micropython import const
 from asyncio import Event
 import asyncio
@@ -17,11 +16,22 @@ IDLE = const(0x00)
 UP = const(0x01)
 DOWN = const(0x02)
 MOVING = const(0x03)
+CALIBRATING = const(0x04)
+ERROR = const(0xFF)
 
 TOLERANCE = const(20)
 
 POS_OFFSET_MAX = const(127)
 POS_OFFSET_MIN = const(-128)
+
+# Homing: the motor is at the end stop when the position changes by less
+# than CAL_STEP for CAL_STABLE_COUNT samples in a row.
+CAL_STEP = const(10)
+CAL_STABLE_COUNT = const(10)
+CAL_SAMPLE_MS = const(10)
+CAL_SETTLE_MS = const(200)
+CAL_TIMEOUT_MS = const(10_000)
+CAL_HOME_OFFSET = const(400)  # Small offset so the platform is fully lowered
 
 class Gate(Dynamixel):
 
@@ -33,18 +43,25 @@ class Gate(Dynamixel):
         self.home_pos = self.present_position - LENGTH
         self.speed = VEL_DEFAULT
         self.torque = TRQ_DEFAULT
-        self._calibrate_home()
 
         self.target_pos = self.home_pos
         self._ismoving = False
         self._isup = False
         self._isdown = False
+        self._iscalibrating = False
+        self._iserror = False
+        self.position_events = False
+        self.telemetry_events = False
         self.isr = Event()
         self._task = None
 
     @property
     def status(self) -> int:
-        if self._ismoving:
+        if self._iserror:
+            return ERROR
+        elif self._iscalibrating:
+            return CALIBRATING
+        elif self._ismoving:
             return MOVING
         elif self._isup:
             return UP
@@ -87,6 +104,12 @@ class Gate(Dynamixel):
     def max_pos(self):
         return self.home_pos + LENGTH + self._offset
 
+    def enable(self):
+        self.torque_enabled = True
+
+    def disable(self):
+        self.torque_enabled = False
+
     def lower_down(self):
         if self.status != DOWN:
             self.move(0)
@@ -100,9 +123,7 @@ class Gate(Dynamixel):
         pos = self.home_pos if pos < self.home_pos else pos
         pos = self.max_pos if pos > self.max_pos else pos
         self.target_pos = pos
-        if self._task and not self._task.done():
-            self._task.cancel()
-        self._task = asyncio.create_task(self._run())
+        self._start(self._run())
 
     def stop(self):
         if self._task and not self._task.done():
@@ -111,6 +132,14 @@ class Gate(Dynamixel):
             self.goal_position = self.present_position
             self._ismoving = False
             self.isr.set()
+
+    def start_calibration(self):
+        self._start(self.calibrate())
+
+    def _start(self, coro):
+        if self._task and not self._task.done():
+            self._task.cancel()
+        self._task = asyncio.create_task(coro)
 
     async def _run(self):
         self._enable()
@@ -145,19 +174,41 @@ class Gate(Dynamixel):
         self._ismoving = True
         self.isr.set()
 
-    def _calibrate_home(self):
+    async def calibrate(self):
+        """Drive the gate to the lower end stop and record it as home.
+
+        Runs as a task, so the device stays on the bus while homing.
+        On timeout or a servo error the gate enters the ERROR state.
+        """
+        self._iserror = False
+        self._isup = False
+        self._isdown = False
+        self._iscalibrating = True
+        self.isr.set()
+        try:
+            await asyncio.wait_for_ms(self._find_home(), CAL_TIMEOUT_MS)
+            self.home_pos = self.present_position + CAL_HOME_OFFSET
+            self.target_pos = self.home_pos
+            self._isdown = True
+            self.torque_enabled = False
+        except Exception:
+            # asyncio.TimeoutError, or a servo comms error. A CancelledError
+            # from move() or stop() is a BaseException and passes through.
+            self._iserror = True
+            self.torque_enabled = False
+        finally:
+            self._iscalibrating = False
+            self.isr.set()
+
+    async def _find_home(self):
         self.torque_enabled = True
         self.goal_extend_position = self.home_pos
         last_pos = self.present_position
-        time.sleep(0.2)
-        conuter = 0
-        while True:
+        await asyncio.sleep_ms(CAL_SETTLE_MS)
+        stable = 0
+        while stable <= CAL_STABLE_COUNT:
             pos = self.present_position
-            if abs(last_pos - pos) < 10:  # Check if the motor is close to the home position
-                conuter += 1
-            if conuter > 10:
-                break
+            if abs(last_pos - pos) < CAL_STEP:
+                stable += 1
             last_pos = pos
-            time.sleep(0.01)
-        self.torque_enabled = False
-        self.home_pos = self.present_position + 400  # Add a small offset to ensure the platform is fully lowered
+            await asyncio.sleep_ms(CAL_SAMPLE_MS)
