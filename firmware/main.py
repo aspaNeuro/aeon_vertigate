@@ -30,5 +30,11 @@ device = HarpDevice(
 setup_register_handlers(device, myGate)
 setup_user_task(device, myGate, ADDR_STATUS)
 
+# Home the gate once the device is running, so USB comes up first.
+# Control.Calibrate runs the same task again on request.
+@device.task
+async def _home_at_boot():
+    myGate.start_calibration()
+
 asyncio.run(device.run())
 
