@@ -6,9 +6,6 @@
 launchSettings.json
 *.user
 
-# Bonsai editor state
-*.layout
-
 # MicroPython firmware development
 .vscode/
 .micropico
