@@ -93,7 +93,7 @@ expects that.
 
 ### Basic usage
 
-Write one byte to the **Operation** register (`0x21`):
+Write one byte to the **TargetPosition** register (`0x21`):
 
 | Value     | Effect                          |
 | --------- | ------------------------------- |
@@ -101,7 +101,7 @@ Write one byte to the **Operation** register (`0x21`):
 | `255`     | Raise the gate fully (UP)       |
 | `1`–`254` | Move to a position in between   |
 
-Read the **Status** register (`0x22`), or subscribe to its event, to follow the gate state.
+Read the **GateState** register (`0x22`), or subscribe to its event, to follow the gate state.
 
 A Bonsai workflow is provided in `docs/workflows/GateControl.bonsai`.
 
@@ -112,11 +112,11 @@ A Bonsai workflow is provided in `docs/workflows/GateControl.bonsai`.
 | Address | Name      | Access    | Description                                                                    |
 | ------- | --------- | --------- | ------------------------------------------------------------------------------ |
 | `0x20`  | Control   | W         | Commands, one per bit. See the table below.                                    |
-| `0x21`  | Operation | W         | Target position. 0 = down, 255 = up, 1–254 = in between. Unit: 1.2 mm          |
-| `0x22`  | Status    | R + Event | `0x00` Idle, `0x01` Up, `0x02` Down, `0x03` Moving, `0x04` Calibrating, `0xFF` Error |
+| `0x21`  | TargetPosition | W    | Target position. 0 = down, 255 = up, 1–254 = in between. Unit: 1.2 mm          |
+| `0x22`  | GateState | R + Event | `0x00` Idle, `0x01` Up, `0x02` Down, `0x03` Moving, `0x04` Calibrating, `0xFF` Error |
 | `0x23`  | Speed     | R/W       | Profile velocity. 0–255, default 255. Unit: 0.38 mm/s                          |
 | `0x24`  | Torque    | R/W       | Current limit. 0–127, default 35. Unit: 0.36 kgf·mm                            |
-| `0x25`  | Offset    | R/W       | Position offset in encoder counts. −128 to +127, default 0. Unit: 25 μm        |
+| `0x25`  | CalibrationOffset | R/W | Offset for the fully-up position. −128 to +127, default 0. Unit: 25 μm       |
 
 Writing a bit of **Control** runs one command. A write with both bits of a pair set (for example
 `EnableMotor` and `DisableMotor`) is rejected with an error reply.
@@ -132,12 +132,12 @@ Writing a bit of **Control** runs one command. A write with both bits of a pair 
 | `0x40` | EnableTelemetryEvent    | Reserved for the ServoTelemetry register.                 |
 | `0x80` | DisableTelemetryEvent   | Reserved for the ServoTelemetry register.                 |
 
-The gate homes itself at boot. If the servo does not answer, Status reports `Error`. Write
+The gate homes itself at boot. If the servo does not answer, GateState reports `Error`. Write
 `Calibrate` to try again after fixing the connection.
 
 ### Calibration guidelines
 
-- Write **Offset** (`0x25`) to adjust the fully-up position without moving hardware.
+- Write **CalibrationOffset** (`0x25`) to adjust the fully-up position without moving hardware.
 - Change **Torque** (`0x24`) if the gate stalls, or pushes too hard at the end stops.
 - Lower **Speed** (`0x23`) for slower and smoother motion.
 

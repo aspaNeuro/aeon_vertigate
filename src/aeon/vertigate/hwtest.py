@@ -9,8 +9,14 @@ What it does, in order:
        and prints them the way the Bonsai console does. Then reads Status.
     2. Sends a bad Control write (Enable + Disable) and expects an error reply.
     3. Raises the gate, sends Stop after 0.5 s, and expects the gate to stop.
-    4. Sends Calibrate and waits for Status to go Calibrating, then Down.
-    5. Prints every Status event seen on the way.
+    4. Sends Calibrate and waits for GateState to go Calibrating, then Down.
+    5. Checks the non-volatile settings. A written Speed, Torque or device
+       name must survive a reboot, and RST_DEF must bring the defaults back.
+
+Every GateState event seen on the way is printed.
+
+Section 5 reboots the board several times, so it takes about a minute. Skip it
+with --no-reboot.
 
 Stop early with Ctrl-C. The script leaves the device in ACTIVE mode.
 """
@@ -32,14 +38,32 @@ R_HW_VERSION_H, R_HW_VERSION_L = 1, 2
 R_ASSEMBLY_VERSION = 3
 R_CORE_VERSION_H, R_CORE_VERSION_L = 4, 5
 R_FW_VERSION_H, R_FW_VERSION_L = 6, 7
+R_RESET_DEV = 11
 R_OP_CTRL = 10
 R_DEVICE_NAME = 12
 R_SERIAL_NUMBER = 13
 OP_ACTIVE = 0x01
 
 ADDR_CONTROL = 32
-ADDR_OPERATION = 33
-ADDR_STATUS = 34
+ADDR_TARGET_POSITION = 33
+ADDR_GATE_STATE = 34
+ADDR_SPEED = 35
+ADDR_TORQUE = 36
+ADDR_CALIBRATION_OFFSET = 37
+
+# R_RESET_DEV bits.
+RST_DEF = 0x01
+RST_EE = 0x02
+SAVE = 0x04
+BOOT_DEF = 0x40
+BOOT_EE = 0x80
+
+# device.yml defaultValue for the registers marked volatile: false.
+SPEED_DEFAULT = 255
+TORQUE_DEFAULT = 35
+
+REBOOT_SECONDS = 9
+DEVICE_NAME_LEN = 25
 
 CTRL_ENABLE_MOTOR = 0x01
 CTRL_DISABLE_MOTOR = 0x02
@@ -102,7 +126,7 @@ def request(ser, msg_type, address, payload_type, payload=b"", timeout=1.0):
 
 
 def print_event(f):
-    if f["address"] == ADDR_STATUS and f["payload"]:
+    if f["address"] == ADDR_GATE_STATE and f["payload"]:
         v = f["payload"][0]
         print(f"  event  Status = {v} ({STATUS_NAMES.get(v, '?')})")
     else:
@@ -157,7 +181,7 @@ def write_u8(ser, address, value):
 def wait_status(ser, wanted, timeout):
     deadline = time.perf_counter() + timeout
     while time.perf_counter() < deadline:
-        v = read_u8(ser, ADDR_STATUS)
+        v = read_u8(ser, ADDR_GATE_STATE)
         if v == wanted:
             return True
         time.sleep(0.1)
@@ -169,27 +193,111 @@ def check(ok, text):
     return ok
 
 
+def open_port(port, settle=0.2):
+    ser = serial.Serial(port, baudrate=1_000_000, timeout=0.005)
+    ser.dtr = True
+    time.sleep(settle)
+    ser.reset_input_buffer()
+    return ser
+
+
+def reboot(ser, port, command):
+    """Send a reset command, wait for the device to come back, and reopen.
+
+    The device drops the USB port while it reboots, so the port has to be
+    closed and opened again.
+    """
+    # Do not wait for the reply. The device answers and then reboots, so the
+    # port can disappear while the reply is still being read.
+    try:
+        ser.write(encode(MSG_WRITE, R_RESET_DEV, PT_U8, bytes([command])))
+        time.sleep(0.3)
+    except serial.SerialException:
+        pass
+    ser.close()
+    time.sleep(REBOOT_SECONDS)
+    ser = open_port(port, settle=1.0)
+    write_u8(ser, R_OP_CTRL, OP_ACTIVE)
+    return ser
+
+
+def write_name(ser, name):
+    padded = name.encode()[:DEVICE_NAME_LEN - 1]
+    padded += bytes(DEVICE_NAME_LEN - len(padded))
+    return request(ser, MSG_WRITE, R_DEVICE_NAME, PT_U8, padded)
+
+
+def check_settings(ser, port, results):
+    """Check that a written value survives a reboot.
+
+    device.yml marks Speed, Torque and CalibrationOffset `volatile: false`,
+    so the firmware stores them on write. R_RESET_DEV reports how the device
+    booted and can put the defaults back.
+    """
+    flags = read_u8(ser, R_RESET_DEV)
+    results.append(check(flags is not None, "ResetDevice is readable"))
+    results.append(check(flags in (BOOT_DEF, BOOT_EE), f"one boot bit set, read 0x{flags:02X}" if flags is not None else "no boot bits"))
+
+    reply = request(ser, MSG_WRITE, R_RESET_DEV, PT_U8, bytes([BOOT_EE]))
+    results.append(check(reply is not None and reply["error"], "writing a boot bit gives an error reply"))
+
+    ser = reboot(ser, port, RST_DEF)
+    results.append(check(read_u8(ser, R_RESET_DEV) == BOOT_DEF, "RST_DEF boots from the defaults"))
+    speed, torque = read_u8(ser, ADDR_SPEED), read_u8(ser, ADDR_TORQUE)
+    results.append(check(speed == SPEED_DEFAULT and torque == TORQUE_DEFAULT,
+                         f"defaults are in the registers: Speed {speed}, Torque {torque}"))
+
+    write_u8(ser, ADDR_SPEED, 200)
+    write_u8(ser, ADDR_TORQUE, 42)
+    ser = reboot(ser, port, RST_EE)
+    results.append(check(read_u8(ser, R_RESET_DEV) == BOOT_EE, "the device boots from storage"))
+    speed, torque = read_u8(ser, ADDR_SPEED), read_u8(ser, ADDR_TORQUE)
+    results.append(check(speed == 200 and torque == 42,
+                         f"written values survived the reboot: Speed {speed}, Torque {torque}"))
+
+    ser = reboot(ser, port, RST_DEF)
+    speed, torque = read_u8(ser, ADDR_SPEED), read_u8(ser, ADDR_TORQUE)
+    results.append(check(speed == SPEED_DEFAULT and torque == TORQUE_DEFAULT,
+                         f"RST_DEF puts the defaults back: Speed {speed}, Torque {torque}"))
+
+    # The device name is non-volatile too, and the specification says a write
+    # to it must be saved and must reset the device.
+    original = read_str(ser, R_DEVICE_NAME)
+    write_name(ser, "GateTestName")
+    time.sleep(0.3)
+    ser.close()
+    time.sleep(REBOOT_SECONDS)
+    ser = open_port(port, settle=1.0)
+    write_u8(ser, R_OP_CTRL, OP_ACTIVE)
+    name = read_str(ser, R_DEVICE_NAME)
+    results.append(check(name == "GateTestName", f"the written device name survived the reboot, read {name!r}"))
+
+    ser = reboot(ser, port, RST_DEF)
+    name = read_str(ser, R_DEVICE_NAME)
+    results.append(check(name == original, f"RST_DEF puts the name back to {original!r}, read {name!r}"))
+    return ser
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", default="COM21" if sys.platform == "win32" else "/dev/ttyACM0")
+    p.add_argument("--no-reboot", action="store_true",
+                   help="skip the non-volatile settings checks, which reboot the board")
     args = p.parse_args()
 
     results = []
-    with serial.Serial(args.port, baudrate=1_000_000, timeout=0.005) as ser:
-        ser.dtr = True
-        time.sleep(0.2)
-        ser.reset_input_buffer()
+    with open_port(args.port) as ser:
 
         print("1. Identity and state, as Bonsai sees it on connect")
         who = print_identity(ser)
         results.append(check(who is not None, f"WhoAmI = {who}"))
         write_u8(ser, R_OP_CTRL, OP_ACTIVE)  # events are only sent in ACTIVE mode
-        v = read_u8(ser, ADDR_STATUS)
+        v = read_u8(ser, ADDR_GATE_STATE)
         results.append(check(v is not None, f"Status = {v} ({STATUS_NAMES.get(v, '?')})"))
         if v == 4:
             print("  gate is still homing from boot, waiting")
             results.append(check(wait_status(ser, 2, CAL_TIMEOUT_S), "boot homing reached Down"))
-            v = read_u8(ser, ADDR_STATUS)
+            v = read_u8(ser, ADDR_GATE_STATE)
         servo = v != 0xFF
         if not servo:
             print("  no servo answering: expecting Error instead of Idle and Down")
@@ -201,12 +309,12 @@ def main():
         results.append(check(f is not None and f["error"], "Enable + Disable gives an error reply"))
 
         print("3. Stop halts a movement")
-        write_u8(ser, ADDR_OPERATION, 255)
+        write_u8(ser, ADDR_TARGET_POSITION, 255)
         time.sleep(0.5)
         f = write_u8(ser, ADDR_CONTROL, CTRL_STOP)
         results.append(check(f is not None and not f["error"], "Stop write accepted"))
         time.sleep(0.3)
-        v = read_u8(ser, ADDR_STATUS)
+        v = read_u8(ser, ADDR_GATE_STATE)
         results.append(check(v == after_stop, f"Status after Stop = {v} ({STATUS_NAMES.get(v, '?')}), expected {STATUS_NAMES[after_stop]}"))
         drain_events(ser, 0.5)
 
@@ -214,12 +322,20 @@ def main():
         f = write_u8(ser, ADDR_CONTROL, CTRL_CALIBRATE)
         results.append(check(f is not None and not f["error"], "Calibrate write accepted"))
         time.sleep(0.2)
-        v = read_u8(ser, ADDR_STATUS)
+        v = read_u8(ser, ADDR_GATE_STATE)
         # Without a servo the setup fails at once, so Calibrating is too short to see.
         during = (4,) if servo else (4, 0xFF)
         results.append(check(v in during, f"Status during homing = {v} ({STATUS_NAMES.get(v, '?')}), expected {' or '.join(STATUS_NAMES[d] for d in during)}"))
         results.append(check(wait_status(ser, after_home, CAL_TIMEOUT_S), f"homing reached {STATUS_NAMES[after_home]} within the timeout"))
         drain_events(ser, 0.5)
+
+        if args.no_reboot:
+            print("5. Non-volatile settings: skipped (--no-reboot)")
+        else:
+            print("5. Non-volatile settings survive a reboot")
+            print(f"   this reboots the board three times, about {3 * REBOOT_SECONDS} seconds")
+            ser = check_settings(ser, args.port, results)
+        ser.close()
 
     print()
     print(f"{sum(results)} of {len(results)} checks passed")

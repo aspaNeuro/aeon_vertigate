@@ -4,7 +4,7 @@ from machine import Pin, UART
 from usb.device.cdc import CDCInterface
 import usb.device
 from gate import Gate
-from register import ADDR_STATUS, setup_register_handlers
+from register import ADDR_GATE_STATE, setup_register_handlers
 from task import setup_user_task
 
 
@@ -48,7 +48,7 @@ def main():
     device.bank.get(R_HARP_VERSION_L).storage[0] = HARP_VERSION[1]
 
     setup_register_handlers(device, myGate)
-    setup_user_task(device, myGate, ADDR_STATUS)
+    setup_user_task(device, myGate, ADDR_GATE_STATE)
 
     # Home the gate once the device is running, so USB comes up first.
     # Control.Calibrate runs the same task again on request.
