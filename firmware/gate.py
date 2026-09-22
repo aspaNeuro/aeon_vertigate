@@ -2,6 +2,9 @@ from dynamixel import Dynamixel, DynamixelModel
 from micropython import const
 from asyncio import Event
 import asyncio
+# TODO: check why we have some hex vs dec values in the constants below. 
+# The hex values are from the Dynamixel docs, but the dec values are from the original firmware. 
+# They should be equivalent, but we should check that.
 
 TRQ_LIM = const(0x7F)
 VEL_LIM = const(0xFF)
@@ -38,13 +41,8 @@ class Gate(Dynamixel):
     def __init__(self, uart):
         super().__init__(uart, model=DynamixelModel.XM430_W210, id=1)
         self._offset = 0
-        self.torque_enabled = False
-        self.operating_mode = 5  # current control mode
-        self.home_pos = self.present_position - LENGTH
-        self.speed = VEL_DEFAULT
-        self.torque = TRQ_DEFAULT
-
-        self.target_pos = self.home_pos
+        self.home_pos = 0
+        self.target_pos = 0
         self._ismoving = False
         self._isup = False
         self._isdown = False
@@ -54,6 +52,25 @@ class Gate(Dynamixel):
         self.telemetry_events = False
         self.isr = Event()
         self._task = None
+
+        # The servo may be absent or unpowered. The device must still start,
+        # so a failure here only sets the ERROR state. Calibrate retries.
+        try:
+            self._setup_servo()
+        except Exception:
+            self._iserror = True
+
+    def _setup_servo(self):
+        """Apply the operating mode and the default limits.
+
+        Raises if the servo does not answer.
+        """
+        self.torque_enabled = False
+        self.operating_mode = 5  # current control mode
+        self.home_pos = self.present_position - LENGTH
+        self.target_pos = self.home_pos
+        self.speed = VEL_DEFAULT
+        self.torque = TRQ_DEFAULT
 
     @property
     def status(self) -> int:
@@ -129,7 +146,10 @@ class Gate(Dynamixel):
         if self._task and not self._task.done():
             self._task.cancel()
             self._task = None
-            self.goal_position = self.present_position
+            try:
+                self.goal_position = self.present_position
+            except Exception:
+                self._iserror = True
             self._ismoving = False
             self.isr.set()
 
@@ -142,27 +162,30 @@ class Gate(Dynamixel):
         self._task = asyncio.create_task(coro)
 
     async def _run(self):
-        self._enable()
-
         self._isup = False
         self._isdown = False
+        try:
+            self._enable()
 
-        if self.target_pos > self.present_position:
-            while self.present_position < self.target_pos - TOLERANCE:
-                await asyncio.sleep_ms(50)
-        else:
-            while self.present_position > self.target_pos + TOLERANCE:
-                await asyncio.sleep_ms(50)
+            if self.target_pos > self.present_position:
+                while self.present_position < self.target_pos - TOLERANCE:
+                    await asyncio.sleep_ms(50)
+            else:
+                while self.present_position > self.target_pos + TOLERANCE:
+                    await asyncio.sleep_ms(50)
 
-        if self.target_pos == self.home_pos:
-            await asyncio.sleep_ms(100)
-            self.torque_enabled = False
-            await asyncio.sleep_ms(500)
-            self._isdown = True
-        elif self.target_pos == self.max_pos:
-            self._isup = True
-
-        self._disable()
+            if self.target_pos == self.home_pos:
+                await asyncio.sleep_ms(100)
+                self.torque_enabled = False
+                await asyncio.sleep_ms(500)
+                self._isdown = True
+            elif self.target_pos == self.max_pos:
+                self._isup = True
+        except Exception:
+            # A servo comms error. A CancelledError passes through.
+            self._iserror = True
+        finally:
+            self._disable()
 
     def _disable(self):
         self._ismoving = False
@@ -186,6 +209,7 @@ class Gate(Dynamixel):
         self._iscalibrating = True
         self.isr.set()
         try:
+            self._setup_servo()
             await asyncio.wait_for_ms(self._find_home(), CAL_TIMEOUT_MS)
             self.home_pos = self.present_position + CAL_HOME_OFFSET
             self.target_pos = self.home_pos
@@ -195,7 +219,10 @@ class Gate(Dynamixel):
             # asyncio.TimeoutError, or a servo comms error. A CancelledError
             # from move() or stop() is a BaseException and passes through.
             self._iserror = True
-            self.torque_enabled = False
+            try:
+                self.torque_enabled = False
+            except Exception:
+                pass
         finally:
             self._iscalibrating = False
             self.isr.set()
