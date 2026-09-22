@@ -6,6 +6,9 @@
 launchSettings.json
 *.user
 
+# Python host tools
+.venv/
+
 # MicroPython firmware development
 .vscode/
 .micropico
