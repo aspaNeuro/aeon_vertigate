@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <PackageTags>Aeon VertiGate Harp</PackageTags>
+    <PackageProjectUrl>https://aeon.swc.ucl.ac.uk/</PackageProjectUrl>
+
+    <Authors>Sainsbury Wellcome Centre</Authors>
+    <Copyright>Copyright © University College London and Contributors</Copyright>
+
+    <!-- This repository keeps one LICENSE at the root, not one per folder. -->
+    <PackageLicenseSourcePath>$(MSBuildThisFileDirectory)../../LICENSE</PackageLicenseSourcePath>
+  </PropertyGroup>
+</Project>
