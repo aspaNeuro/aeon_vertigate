@@ -45,7 +45,8 @@ TBC
    uv sync
    ```
 
-   This creates a `.venv` with `mpremote` and `pyserial`. Add `--all-extras` to include `harp-python`.
+   This creates a `.venv` with `mpremote` and `pyserial`. Add `--all-extras` to also install the
+   packages the generated Python interface needs.
 5. **Install the libraries.** Replace `COM3` with your port:
 
    ```bash
@@ -105,6 +106,62 @@ Read the **GateState** register (`0x22`), or subscribe to its event, to follow t
 
 A Bonsai workflow is provided in `docs/workflows/GateControl.bonsai`.
 
+## 🧩 Interfaces
+
+`device.yml` describes every register. Two interfaces are generated from it:
+
+- **Bonsai**, in `software/Aeon.VertiGate/`. It gives one typed operator per
+  register, instead of raw addresses and payload types.
+- **Python**, in `src/aeon/vertigate/device.py`. It works with
+  [harp-python](https://github.com/harp-tech/python).
+
+Both are committed. You only need to generate them again after you change
+`device.yml`.
+
+### Generating them again
+
+`harp.toolkit` is pinned in `.config/dotnet-tools.json`, so everyone uses the
+same version. Install it once per clone:
+
+```bash
+dotnet tool restore
+```
+
+Then, from the repository root:
+
+```bash
+dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
+dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+```
+
+Commit the result. Do not edit the generated files by hand. They say so at the
+top, and the next run would overwrite the change.
+
+### Using the Python interface
+
+```bash
+uv sync --all-extras
+```
+
+```python
+from aeon.vertigate import device
+
+print(device.WHO_AM_I)    # 3002
+print(device.REGISTER_MAP)
+```
+
+### Checking the device against the specification
+
+`harp.toolkit` can test a connected device. Use the Harp port, not the REPL
+port:
+
+```bash
+dotnet harp.toolkit verify --port COM4 --metadata device.yml --report artifacts/verify.html
+```
+
+It runs 51 checks and writes an HTML report. It exits with 1 if any check
+fails, so it can also run in CI. Some checks fail today. See the open issues.
+
 ## ⚙️ Configuration & Tuning
 
 ### Register table
@@ -148,6 +205,7 @@ The gate homes itself at boot. If the servo does not answer, GateState reports `
 - **MicroPython** `SEEED_XIAO_RP2350` build, v1.29.0 or later: [micropython.org](https://micropython.org/download/SEEED_XIAO_RP2350/). See "Which MicroPython build" above.
 - **uv**: [docs.astral.sh/uv](https://docs.astral.sh/uv/) (creates the `.venv` with `mpremote` and `pyserial`)
 - **Bonsai**: [bonsai-rx.org](https://bonsai-rx.org/) (to run the example workflow)
+- **.NET SDK 8 or later**: [dotnet.microsoft.com](https://dotnet.microsoft.com/download) (only to generate the interfaces or build the Bonsai package)
 
 ## 📜 License
 
