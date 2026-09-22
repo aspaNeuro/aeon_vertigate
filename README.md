@@ -137,6 +137,17 @@ dotnet harp.toolkit generate interface python device.yml --output src/aeon/verti
 Commit the result. Do not edit the generated files by hand. They say so at the
 top, and the next run would overwrite the change.
 
+### Building the Bonsai package
+
+```bash
+dotnet build software/Aeon.VertiGate.sln -c Release
+dotnet pack software/Aeon.VertiGate.sln -c Release
+```
+
+The package lands in `artifacts/package/release/`. A local build is always
+version `42.42.42-dev0`, so it is never mistaken for a release. That is the
+version the pinned Bonsai environment expects, so a build is all Bonsai needs.
+
 ### Using the Python interface
 
 ```bash
