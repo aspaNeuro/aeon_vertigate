@@ -9,6 +9,15 @@ from task import setup_user_task
 
 
 from microharp import HarpDevice, CdcTransport
+from microharp.registers import R_HARP_VERSION_H, R_HARP_VERSION_L
+
+# Keep these equal to device.yml. Bonsai reads them on connect.
+WHO_AM_I = 3002
+FW_VERSION = (0, 1)
+HW_VERSION = (0, 1)
+# Version of the Harp device specification this firmware follows. Bonsai
+# shows it as CoreVersion. 1.13 is the current release of harp-tech/protocol.
+HARP_VERSION = (1, 13)
 
 
 def main():
@@ -29,9 +38,14 @@ def main():
         transport=CdcTransport(cdc),
         sync_uart=myCLK,
         led_pin=myled,
-        who_am_i=5350,
+        who_am_i=WHO_AM_I,
+        fw_version=FW_VERSION,
+        hw_version=HW_VERSION,
         device_name=b"VertiGate"
     )
+    # microharp has no parameter for the core version. Write the registers.
+    device.bank.get(R_HARP_VERSION_H).storage[0] = HARP_VERSION[0]
+    device.bank.get(R_HARP_VERSION_L).storage[0] = HARP_VERSION[1]
 
     setup_register_handlers(device, myGate)
     setup_user_task(device, myGate, ADDR_STATUS)

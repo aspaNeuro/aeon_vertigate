@@ -6,7 +6,7 @@
 
 A [Harp](https://harp-tech.org/) device that controls a vertical gate. A Dynamixel XM430-W210 servo moves the gate.
 
-VertiGate is a Harp device (WhoAmI **5350**) on a USB CDC serial port. The gate has 256 positions. 0 is fully down and 255 is fully up. The device reports the gate state as a Harp event.
+VertiGate is a Harp device (WhoAmI **3002**, proposed for the SWC block 3000 to 3500, not registered yet) on a USB CDC serial port. The gate has 256 positions. 0 is fully down and 255 is fully up. The device reports the gate state as a Harp event.
 
 ## 🔧 Features
 

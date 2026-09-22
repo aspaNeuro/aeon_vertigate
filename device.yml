@@ -2,7 +2,7 @@
 ---
 # yaml-language-server: $schema=https://harp-tech.org/draft-02/schema/device.json
 device: VertiGate
-whoAmI: 5350
+whoAmI: 3002
 firmwareVersion: "0.1"
 hardwareTargets: "0.1"
 registers:
