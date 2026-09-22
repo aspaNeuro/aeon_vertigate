@@ -26,6 +26,7 @@ CTRL_PAIRS = (
 )
 
 ERR_BAD_VALUE = const(1)
+ERR_SERVO = const(2)
 
 
 def setup_register_handlers(device: HarpDevice, gate: Gate):
@@ -35,7 +36,12 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
     device.add_u8(ADDR_STATUS, access=READ_ONLY | EVENT, name="Status")
     device.add_u8(ADDR_SPD, access=READ_WRITE, name="Speed")
     device.add_u8(ADDR_TRQ, access=READ_WRITE, name="Torque")
-    device.add_s8(ADDR_OFFSET, access=READ_WRITE, name="Offset")
+    # microharp has no add_s8 helper. Use the generic form.
+    device.add_register(ADDR_OFFSET, PT_S8, access=READ_WRITE, name="Offset")
+
+    @device.on_read(address=ADDR_STATUS, payload_type=PT_U8, name="Status")
+    async def _status(reg):
+        reg.storage[0] = gate.status
 
     @device.on_write(address=ADDR_CONTROL, payload_type=PT_U8, name="Control")
     async def _control(reg, payload):
@@ -47,12 +53,16 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
                 return ERR_BAD_VALUE
         reg.storage[0] = cmd
 
-        if cmd & CTRL_STOP:
-            gate.stop()
-        if cmd & CTRL_DISABLE_MOTOR:
-            gate.disable()
-        if cmd & CTRL_ENABLE_MOTOR:
-            gate.enable()
+        try:
+            if cmd & CTRL_STOP:
+                gate.stop()
+            if cmd & CTRL_DISABLE_MOTOR:
+                gate.disable()
+            if cmd & CTRL_ENABLE_MOTOR:
+                gate.enable()
+        except Exception:
+            # The servo did not answer. Reply with an error, keep running.
+            return ERR_SERVO
         if cmd & CTRL_CALIBRATE:
             gate.start_calibration()
         if cmd & CTRL_ENABLE_POSITION_EVENT:
@@ -79,13 +89,19 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
     async def _speed(reg, payload):
         speed = payload[0]
         reg.storage[0] = speed
-        gate.speed = speed
+        try:
+            gate.speed = speed
+        except Exception:
+            return ERR_SERVO
 
     @device.on_write(address=ADDR_TRQ, payload_type=PT_U8, name="Torque")
     async def _torque(reg, payload):
         torque = payload[0]
         reg.storage[0] = torque
-        gate.torque = torque
+        try:
+            gate.torque = torque
+        except Exception:
+            return ERR_SERVO
 
     @device.on_write(address=ADDR_OFFSET, payload_type=PT_S8, name="Offset")
     async def _offset(reg, payload):
