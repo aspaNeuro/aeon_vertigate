@@ -23,22 +23,73 @@ TBC
 
 ### Firmware installation
 
-1. **Flash MicroPython.** Download the latest RP2354 MicroPython UF2 from [micropython.org](https://micropython.org/download/RPI_PICO2/). Hold BOOTSEL and copy the file to the board.
-2. **Install mpremote.** Run `pip install mpremote`.
-3. **Copy the firmware.** From the repository root, run:
+> **Which MicroPython build.** The NeuroPico uses an RP2354A with **2 MB** of flash inside the chip.
+> Do not use the `RPI_PICO2` build. It assumes 4 MB and its file system wraps around onto the
+> firmware. The board works for a while, then freezes or corrupts its files. Use the
+> **`SEEED_XIAO_RP2350`** build, **v1.29.0 or later**. It is made for an RP2350A with 2 MB and has
+> no board-specific code that affects VertiGate. Older versions of that build have the same 4 MB
+> problem.
+
+1. **Enter the bootloader.** Hold BOOTSEL and press reset (or plug the board in while holding
+   BOOTSEL). A drive named `RP2350` appears.
+2. **Erase the flash, first time only.** Copy
+   [flash_nuke.uf2](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2) to the drive. This
+   removes any old file system. The drive disappears and comes back after a few seconds.
+3. **Flash MicroPython.** Copy
+   [SEEED_XIAO_RP2350-20260824-v1.29.0.uf2](https://micropython.org/resources/firmware/SEEED_XIAO_RP2350-20260824-v1.29.0.uf2)
+   to the drive (newer releases: [micropython.org/download/SEEED_XIAO_RP2350](https://micropython.org/download/SEEED_XIAO_RP2350/)).
+   The board reboots and a COM port appears.
+4. **Install the host tools.** Install [uv](https://docs.astral.sh/uv/), then run from the repository root:
 
    ```bash
-   mpremote cp -r firmware/. :
+   uv sync
    ```
 
-4. **Install the libraries.** Run:
+   This creates a `.venv` with `mpremote` and `pyserial`. Add `--all-extras` to include `harp-python`.
+5. **Install the libraries.** Replace `COM3` with your port:
 
    ```bash
-   mpremote mip install github:SainsburyWellcomeCentre/micropython-dynamixel
-   mpremote mip install github:SainsburyWellcomeCentre/micropython-microharp
+   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel
+   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp
    ```
 
-5. **Reset the board.** The device appears as a USB CDC serial port and starts the Harp protocol.
+6. **Copy the firmware.** From the repository root, run:
+
+   ```bash
+   uv run mpremote connect COM3 cp -r firmware/. :
+   uv run mpremote connect COM3 reset
+   ```
+
+7. **Check the ports.** After the reset the board shows **two** COM ports. The first is the
+   MicroPython REPL. The second is the Harp interface. Use the second one in Bonsai.
+
+### Updating the firmware
+
+The firmware keeps the REPL on its own port, so `mpremote` works while the device runs. Use
+`resume` so that `mpremote` does not soft-reset the board:
+
+```bash
+uv run mpremote connect COM3 resume cp -r firmware/. :
+uv run mpremote connect COM3 resume reset
+```
+
+If the device does not start, read the log it writes on the board:
+
+```bash
+uv run mpremote connect COM3 resume cat :error.log
+```
+
+### Testing
+
+With the board connected and the Harp port known (for example `COM4`):
+
+```bash
+uv run vertigate-test --port COM4
+```
+
+The test checks the `Control` register and prints `PASS` or `FAIL` for each step. It works
+with or without a servo. Without a servo the gate reports the `Error` state, and the script
+expects that.
 
 ### Basic usage
 
@@ -60,11 +111,29 @@ A Bonsai workflow is provided in `docs/workflows/GateControl.bonsai`.
 
 | Address | Name      | Access    | Description                                                                    |
 | ------- | --------- | --------- | ------------------------------------------------------------------------------ |
+| `0x20`  | Control   | W         | Commands, one per bit. See the table below.                                    |
 | `0x21`  | Operation | W         | Target position. 0 = down, 255 = up, 1–254 = in between. Unit: 1.2 mm          |
-| `0x22`  | Status    | R + Event | `0x00` Idle, `0x01` UP, `0x02` DOWN, `0x03` MOVING                              |
+| `0x22`  | Status    | R + Event | `0x00` Idle, `0x01` Up, `0x02` Down, `0x03` Moving, `0x04` Calibrating, `0xFF` Error |
 | `0x23`  | Speed     | R/W       | Profile velocity. 0–255, default 255. Unit: 0.38 mm/s                          |
 | `0x24`  | Torque    | R/W       | Current limit. 0–127, default 35. Unit: 0.36 kgf·mm                            |
 | `0x25`  | Offset    | R/W       | Position offset in encoder counts. −128 to +127, default 0. Unit: 25 μm        |
+
+Writing a bit of **Control** runs one command. A write with both bits of a pair set (for example
+`EnableMotor` and `DisableMotor`) is rejected with an error reply.
+
+| Bit    | Name                    | Effect                                                    |
+| ------ | ----------------------- | --------------------------------------------------------- |
+| `0x01` | EnableMotor             | Turn the motor torque on. The gate holds its position.    |
+| `0x02` | DisableMotor            | Turn the motor torque off. The gate can be moved by hand. |
+| `0x04` | Stop                    | Stop the current movement and hold the position.          |
+| `0x08` | Calibrate               | Move the gate to the lower end stop and record it as home. |
+| `0x10` | EnablePositionEvent     | Reserved for the Position register.                       |
+| `0x20` | DisablePositionEvent    | Reserved for the Position register.                       |
+| `0x40` | EnableTelemetryEvent    | Reserved for the ServoTelemetry register.                 |
+| `0x80` | DisableTelemetryEvent   | Reserved for the ServoTelemetry register.                 |
+
+The gate homes itself at boot. If the servo does not answer, Status reports `Error`. Write
+`Calibrate` to try again after fixing the connection.
 
 ### Calibration guidelines
 
@@ -76,8 +145,8 @@ A Bonsai workflow is provided in `docs/workflows/GateControl.bonsai`.
 
 ## 💻 Software Requirements
 
-- **MicroPython** for RP2354: [micropython.org](https://micropython.org/download/RPI_PICO2/)
-- **mpremote**: `pip install mpremote` (to upload the firmware)
+- **MicroPython** `SEEED_XIAO_RP2350` build, v1.29.0 or later: [micropython.org](https://micropython.org/download/SEEED_XIAO_RP2350/). See "Which MicroPython build" above.
+- **uv**: [docs.astral.sh/uv](https://docs.astral.sh/uv/) (creates the `.venv` with `mpremote` and `pyserial`)
 - **Bonsai**: [bonsai-rx.org](https://bonsai-rx.org/) (to run the example workflow)
 
 ## 📜 License

@@ -702,6 +702,7 @@ global.json
 .github/workflows/           the shared Harp device workflow
 .img/                        FabLabs house convention: README images
 device.yml
+docs/workflows/              example Bonsai workflows (Bonsai Foundation location)
 firmware/                    MicroPython application (stays where it is)
 hardware/                    git submodule: the whole hardware design, own repo
 software/
@@ -709,6 +710,9 @@ software/
   build/                     shared Bonsai Foundation props
   Aeon.VertiGate.sln
   Directory.Build.props
+src/aeon/vertigate/          host Python package: hardware test, generated interface
+pyproject.toml               uv project: mpremote, pyserial, harp-python, the package above
+uv.lock
 LICENSE
 README.md
 RELEASE_NOTE.md              FabLabs house convention
@@ -723,6 +727,14 @@ lowercase folders VertiGate already has. It adopts the SWC FabLabs hardware conv
 `fablabs-automatic-shelter`, `-valve-driver`, `-lick-detector-piezo`, `-monitor-blanking`,
 `-environmental-sensor`). And it carries the harp-tech software pipeline in `software/` with
 generated code and CI. It exists, it works, and colleagues maintain it.
+
+> **Decision (2026-09-22): host Python lives in `src/aeon/vertigate/` as a package.** prefect has
+> no Python rules. `aeon_exp_htsloom` (SWC, Aeon) uses a package under `src/` with a root
+> `pyproject.toml` and `uv`. AIND keeps loose scripts in `software/pyharp/`. The package form was
+> chosen: scripts get entry points (`uv run vertigate-test`), the generated Python interface from
+> step 5 goes in the same package, and the layout matches the other Aeon repo. C# stays in
+> `software/` per Option C, so host code has two roots, one per language. Example Bonsai
+> workflows go in `docs/workflows/`, the Bonsai Foundation location, decided 2026-09-18.
 
 Note that VertiGate currently has **none** of the FabLabs hardware-side items: no `.img/`, no
 `eCAD/`, no `mCAD/`, no `RELEASE_NOTE.md`, no `altium-viewer.json`. It is the only `fablabs-*`
@@ -1016,6 +1028,39 @@ prebuilt firmware image to every release**, so flashing does not need `mpremote`
 `mip install` calls against GitHub. The SWC FabLabs equivalent of AIND's SIPE part number needs
 deciding. See §7.
 
+#### What a prebuilt image is
+
+A prebuilt image is a MicroPython UF2 with the Python files **frozen inside it**. The build has
+a `manifest.py` that lists the modules to freeze: `main.py`, `gate.py`, `register.py`,
+`task.py`, and the `microharp` and `dynamixel` libraries. The build compiles them to bytecode
+and stores them in the firmware region of the flash, not in the file system. They import like
+normal modules and `main.py` runs at boot as usual.
+
+What changes for the user: one `.uf2` file, copied to the `RP2350` drive. No `mpremote`, no
+`mip install`, no file copies.
+
+What it fixes:
+
+- The library versions are fixed in the image. A `mip install` cannot pull a different
+  microharp, which is what broke `add_s8` on 2026-09-21.
+- The flash size is set at build time (`PICO_FLASH_SIZE_BYTES = 2 MB`). The §7.0 fault cannot
+  happen.
+- Frozen bytecode uses less RAM and boots faster.
+- A single-port release build (`builtin_driver=False`) becomes safe again. Updating is a UF2
+  copy, so the missing REPL does not matter.
+
+What it costs:
+
+- A change to one line needs a rebuild and a reflash. Development keeps using `.py` files with
+  `mpremote`, as now. A file on the file system overrides a frozen module of the same name, so a
+  change can be tested on top of a frozen image.
+- The MicroPython build toolchain (Pico SDK, ARM GCC, CMake). Run it in a GitHub Actions
+  workflow, not on each PC. The build is: clone `micropython` at a tagged release, copy the
+  `SEEED_XIAO_RP2350` board definition to a `NEUROPICO` board (or set `PICO_FLASH_SIZE_BYTES`),
+  point `FROZEN_MANIFEST` at this repo, build, attach the UF2 to the release.
+
+The `.py` files stay in the repo and stay the source of truth. The image is a build output.
+
 Also add, because the shared workflow does not include it: a **generated-code freshness gate**
 (regenerate from `device.yml`, then `git diff --exit-code`) and `device.yml` schema validation.
 Without the freshness gate, the committed `Device.Generated.cs` silently drifts from the schema.
@@ -1034,6 +1079,45 @@ together. Today three of those disagree.
 - The board is a **NeuroPico** (RP2354). The firmware hard-codes `Pin(11/12/13)`, `Pin(7)` LED,
   `UART0 rx=Pin(1)` for the Harp sync clock, and `UART1 tx=Pin(8)/rx=Pin(9)` at 1 Mbaud for the
   servo. None of this is documented in the repo.
+
+### 7.0 The flash is 2 MB, and the README pointed at a 4 MB build
+
+Found on 2026-09-21 while testing the `Control` register. Recorded here because it is a
+hardware fact that affects every NeuroPico, not only VertiGate.
+
+**The measurement.** With the file system unmounted, a pattern written to file system block
+700 (absolute address 3.73 MB) read back from block 188 (absolute 1.73 MB). The addresses
+differ by exactly 2 MB. So the chip has **2 MB of flash** and addresses above it wrap around.
+The chip reports `package_sel = 1` (QFN-60), which fits an RP2354A. The OTP `FLASH_DEVINFO`
+row is not programmed, so the bootrom cannot tell the firmware the size.
+
+**The consequence.** The `RPI_PICO2` build assumes 4 MB. It places a 3 MB file system at 1 MB.
+On this chip, file system blocks 256 to 511 map onto the **firmware itself**, and blocks 512 to
+767 map onto blocks 0 to 255. LittleFS rotates its allocator for wear levelling, so a small
+file system works for a long time and then, on one write, overwrites the running firmware. The
+symptoms are a board that freezes after a few commands, `mpremote` timeouts, and
+`OSError: 84` (`LFS_ERR_CORRUPT`). Every NeuroPico flashed per the old README has this fault
+waiting.
+
+**The fix.** MicroPython has no NeuroPico board. The `SEEED_XIAO_RP2350` build is the closest
+official one: an RP2350A with 2 MB, a 1408 KB file system at 640 KB, and no board-specific code
+that affects VertiGate. It must be **v1.29.0 or later**. Before that release the pinned Pico SDK
+still listed the XIAO with 4 MB (`pico-sdk` commit `0da73ec`, MicroPython commit of 2026-07-21
+"Decrease filesystem size to 1408k"), so v1.28.0 and earlier have the same fault. The README
+now says this.
+
+**Follow-ups.** `micropython-neuropico` should say which build to use, or SWC should publish a
+NeuroPico UF2 built with `PICO_FLASH_SIZE_BYTES = 2 MB`. That is the "prebuilt firmware image
+per release" item in §6, and it would also let the firmware be frozen into the image.
+
+**Two more findings from the same session.**
+
+- `rp2.bootsel_button()` returns `0` on this board while BOOTSEL is held. A BOOTSEL-at-boot
+  escape to the REPL is not possible. The firmware now keeps the MicroPython REPL on a second
+  USB CDC port (`builtin_driver=True`) so `mpremote` always works. A single-port release build
+  needs another recovery path, and the flash erase is the only one today.
+- `mpremote` soft-resets the board before each command. Because `main.py` re-initialises USB,
+  that soft reset drops the port. Use `mpremote connect COMx resume <command>`.
 
 ### 7.1 A board support library exists, and its pin map disagrees
 
@@ -1064,7 +1148,8 @@ the board definition lives in one place for the whole fleet.
   `hardwareTargets` tied to a real PCB revision, and PCB and mechanical sources under
   `hardware/`.
 - The README said RP2354 but linked the `RPI_PICO2` UF2 in one place and `RPI_PICO` in another.
-  **Fixed on 2026-09-17**: both links now point at `RPI_PICO2`.
+  Fixed on 2026-09-17 to `RPI_PICO2`, then **replaced on 2026-09-22** by the `SEEED_XIAO_RP2350`
+  build. See §7.0.
 
 ### `harp.device.pico-template` solves most of this. Use it.
 
@@ -1163,6 +1248,11 @@ equivalent of a part number now**. The release convention in §6 and `hardwareTa
   VertiGate's choices here will set the precedent either way.
 - **Two placeholder WhoAmIs are already deployed** (`0000`, `0x1234`). Registering VertiGate
   alone leaves them in the field. Hence the block reservation in §1.1.
+- **Every NeuroPico flashed per the old README carries a latent fault** (§7.0). The `RPI_PICO2`
+  build's 3 MB file system does not fit the 2 MB chip. It overwrites the firmware on a random
+  later write. Any deployed board on that build can freeze without warning. The fix is a
+  reflash with the `SEEED_XIAO_RP2350` build, v1.29.0 or later, which needs a flash erase and
+  a reinstall of the libraries and firmware. This is a fleet issue, not a VertiGate one.
 - **The NeuroPico pin map is contested** (§7.1). The board library and the firmware disagree on
   what pins 12, 13 and 16 are for. Until that is settled, any pinout documentation would be
   guesswork, and it is on the critical path for Phase 6.
