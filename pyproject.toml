@@ -10,8 +10,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The generated interface in src/aeon/vertigate/device.py needs these. They
+# were split out of harp-python in 0.5.0.
 harp = [
-  "harp-python>=0.3.0",
+  "harp-protocol>=0.5.0",
+  "harp-device>=0.5.0",
 ]
 
 [project.scripts]

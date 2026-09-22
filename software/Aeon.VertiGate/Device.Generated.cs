@@ -1,0 +1,1507 @@
+using Bonsai;
+using Bonsai.Harp;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Linq;
+using System.Reactive.Linq;
+using System.Xml.Serialization;
+
+namespace Aeon.VertiGate
+{
+    /// <summary>
+    /// Generates events and processes commands for the VertiGate device connected
+    /// at the specified serial port.
+    /// </summary>
+    [Combinator(MethodName = nameof(Generate))]
+    [WorkflowElementCategory(ElementCategory.Source)]
+    [Description("Generates events and processes commands for the VertiGate device.")]
+    public partial class Device : Bonsai.Harp.Device, INamedElement
+    {
+        /// <summary>
+        /// Represents the unique identity class of the <see cref="VertiGate"/> device.
+        /// This field is constant.
+        /// </summary>
+        public const int WhoAmI = 3002;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="Device"/> class.
+        /// </summary>
+        public Device() : base(WhoAmI) { }
+
+        string INamedElement.Name => nameof(VertiGate);
+
+        /// <summary>
+        /// Gets a read-only mapping from address to register type.
+        /// </summary>
+        public static new IReadOnlyDictionary<int, Type> RegisterMap { get; } = new Dictionary<int, Type>
+            (Bonsai.Harp.Device.RegisterMap.ToDictionary(entry => entry.Key, entry => entry.Value))
+        {
+            { 32, typeof(Control) },
+            { 33, typeof(TargetPosition) },
+            { 34, typeof(GateState) },
+            { 35, typeof(Speed) },
+            { 36, typeof(Torque) },
+            { 37, typeof(CalibrationOffset) }
+        };
+
+        /// <summary>
+        /// Gets the contents of the metadata file describing the <see cref="VertiGate"/>
+        /// device registers.
+        /// </summary>
+        public static readonly string Metadata = GetDeviceMetadata();
+
+        static string GetDeviceMetadata()
+        {
+            var deviceType = typeof(Device);
+            using var metadataStream = deviceType.Assembly.GetManifestResourceStream($"{deviceType.Namespace}.device.yml");
+            using var streamReader = new System.IO.StreamReader(metadataStream);
+            return streamReader.ReadToEnd();
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that returns the contents of the metadata file
+    /// describing the <see cref="VertiGate"/> device registers.
+    /// </summary>
+    [Description("Returns the contents of the metadata file describing the VertiGate device registers.")]
+    public partial class GetDeviceMetadata : Source<string>
+    {
+        /// <summary>
+        /// Returns an observable sequence with the contents of the metadata file
+        /// describing the <see cref="VertiGate"/> device registers.
+        /// </summary>
+        /// <returns>
+        /// A sequence with a single <see cref="string"/> object representing the
+        /// contents of the metadata file.
+        /// </returns>
+        public override IObservable<string> Generate()
+        {
+            return Observable.Return(Device.Metadata);
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that groups the sequence of <see cref="VertiGate"/>" messages by register type.
+    /// </summary>
+    [Description("Groups the sequence of VertiGate messages by register type.")]
+    public partial class GroupByRegister : Combinator<HarpMessage, IGroupedObservable<Type, HarpMessage>>
+    {
+        /// <summary>
+        /// Groups an observable sequence of <see cref="VertiGate"/> messages
+        /// by register type.
+        /// </summary>
+        /// <param name="source">The sequence of Harp device messages.</param>
+        /// <returns>
+        /// A sequence of observable groups, each of which corresponds to a unique
+        /// <see cref="VertiGate"/> register.
+        /// </returns>
+        public override IObservable<IGroupedObservable<Type, HarpMessage>> Process(IObservable<HarpMessage> source)
+        {
+            return source.GroupBy(message => Device.RegisterMap[message.Address]);
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that writes the sequence of <see cref="VertiGate"/>" messages
+    /// to the standard Harp storage format.
+    /// </summary>
+    [DefaultProperty(nameof(Path))]
+    [Description("Writes the sequence of VertiGate messages to the standard Harp storage format.")]
+    public partial class DeviceDataWriter : Sink<HarpMessage>, INamedElement
+    {
+        const string BinaryExtension = ".bin";
+        const string MetadataFileName = "device.yml";
+        readonly Bonsai.Harp.MessageWriter writer = new();
+
+        string INamedElement.Name => nameof(VertiGate) + "DataWriter";
+
+        /// <summary>
+        /// Gets or sets the relative or absolute path on which to save the message data.
+        /// </summary>
+        [Description("The relative or absolute path of the directory on which to save the message data.")]
+        [Editor("Bonsai.Design.SaveFileNameEditor, Bonsai.Design", DesignTypes.UITypeEditor)]
+        public string Path
+        {
+            get => System.IO.Path.GetDirectoryName(writer.FileName);
+            set => writer.FileName = System.IO.Path.Combine(value, nameof(VertiGate) + BinaryExtension);
+        }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether element writing should be buffered. If <see langword="true"/>,
+        /// the write commands will be queued in memory as fast as possible and will be processed
+        /// by the writer in a different thread. Otherwise, writing will be done in the same
+        /// thread in which notifications arrive.
+        /// </summary>
+        [Description("Indicates whether writing should be buffered.")]
+        public bool Buffered
+        {
+            get => writer.Buffered;
+            set => writer.Buffered = value;
+        }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to overwrite the output file if it already exists.
+        /// </summary>
+        [Description("Indicates whether to overwrite the output file if it already exists.")]
+        public bool Overwrite
+        {
+            get => writer.Overwrite;
+            set => writer.Overwrite = value;
+        }
+
+        /// <summary>
+        /// Gets or sets a value specifying how the message filter will use the matching criteria.
+        /// </summary>
+        [Description("Specifies how the message filter will use the matching criteria.")]
+        public FilterType FilterType
+        {
+            get => writer.FilterType;
+            set => writer.FilterType = value;
+        }
+
+        /// <summary>
+        /// Gets or sets a value specifying the expected message type. If no value is
+        /// specified, all messages will be accepted.
+        /// </summary>
+        [Description("Specifies the expected message type. If no value is specified, all messages will be accepted.")]
+        public MessageType? MessageType
+        {
+            get => writer.MessageType;
+            set => writer.MessageType = value;
+        }
+
+        private IObservable<TSource> WriteDeviceMetadata<TSource>(IObservable<TSource> source)
+        {
+            var basePath = Path;
+            if (string.IsNullOrEmpty(basePath))
+                return source;
+
+            var metadataPath = System.IO.Path.Combine(basePath, MetadataFileName);
+            return Observable.Create<TSource>(observer =>
+            {
+                Bonsai.IO.PathHelper.EnsureDirectory(metadataPath);
+                if (System.IO.File.Exists(metadataPath) && !Overwrite)
+                {
+                    throw new System.IO.IOException(string.Format("The file '{0}' already exists.", metadataPath));
+                }
+
+                System.IO.File.WriteAllText(metadataPath, Device.Metadata);
+                return source.SubscribeSafe(observer);
+            });
+        }
+
+        /// <summary>
+        /// Writes each Harp message in the sequence to the specified binary file, and the
+        /// contents of the device metadata file to a separate text file.
+        /// </summary>
+        /// <param name="source">The sequence of messages to write to the file.</param>
+        /// <returns>
+        /// An observable sequence that is identical to the <paramref name="source"/>
+        /// sequence but where there is an additional side effect of writing the
+        /// messages to a raw binary file, and the contents of the device metadata file
+        /// to a separate text file.
+        /// </returns>
+        public override IObservable<HarpMessage> Process(IObservable<HarpMessage> source)
+        {
+            return source.Publish(ps => ps.Merge(
+                WriteDeviceMetadata(writer.Process(ps.GroupBy(message => message.Address)))
+                .IgnoreElements()
+                .Cast<HarpMessage>()));
+        }
+
+        /// <summary>
+        /// Writes each Harp message in the sequence of observable groups to the
+        /// corresponding binary file, where the name of each file is generated from
+        /// the common group register address. The contents of the device metadata file are
+        /// written to a separate text file.
+        /// </summary>
+        /// <param name="source">
+        /// A sequence of observable groups, each of which corresponds to a unique register
+        /// address.
+        /// </param>
+        /// <returns>
+        /// An observable sequence that is identical to the <paramref name="source"/>
+        /// sequence but where there is an additional side effect of writing the Harp
+        /// messages in each group to the corresponding file, and the contents of the device
+        /// metadata file to a separate text file.
+        /// </returns>
+        public IObservable<IGroupedObservable<int, HarpMessage>> Process(IObservable<IGroupedObservable<int, HarpMessage>> source)
+        {
+            return WriteDeviceMetadata(writer.Process(source));
+        }
+
+        /// <summary>
+        /// Writes each Harp message in the sequence of observable groups to the
+        /// corresponding binary file, where the name of each file is generated from
+        /// the common group register name. The contents of the device metadata file are
+        /// written to a separate text file.
+        /// </summary>
+        /// <param name="source">
+        /// A sequence of observable groups, each of which corresponds to a unique register
+        /// type.
+        /// </param>
+        /// <returns>
+        /// An observable sequence that is identical to the <paramref name="source"/>
+        /// sequence but where there is an additional side effect of writing the Harp
+        /// messages in each group to the corresponding file, and the contents of the device
+        /// metadata file to a separate text file.
+        /// </returns>
+        public IObservable<IGroupedObservable<Type, HarpMessage>> Process(IObservable<IGroupedObservable<Type, HarpMessage>> source)
+        {
+            return WriteDeviceMetadata(writer.Process(source));
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that filters register-specific messages
+    /// reported by the <see cref="VertiGate"/> device.
+    /// </summary>
+    /// <seealso cref="Control"/>
+    /// <seealso cref="TargetPosition"/>
+    /// <seealso cref="GateState"/>
+    /// <seealso cref="Speed"/>
+    /// <seealso cref="Torque"/>
+    /// <seealso cref="CalibrationOffset"/>
+    [XmlInclude(typeof(Control))]
+    [XmlInclude(typeof(TargetPosition))]
+    [XmlInclude(typeof(GateState))]
+    [XmlInclude(typeof(Speed))]
+    [XmlInclude(typeof(Torque))]
+    [XmlInclude(typeof(CalibrationOffset))]
+    [Description("Filters register-specific messages reported by the VertiGate device.")]
+    public class FilterRegister : FilterRegisterBuilder, INamedElement
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="FilterRegister"/> class.
+        /// </summary>
+        public FilterRegister()
+        {
+            Register = new Control();
+        }
+
+        string INamedElement.Name
+        {
+            get => $"{nameof(VertiGate)}.{GetElementDisplayName(Register)}";
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator which filters and selects specific messages
+    /// reported by the VertiGate device.
+    /// </summary>
+    /// <seealso cref="Control"/>
+    /// <seealso cref="TargetPosition"/>
+    /// <seealso cref="GateState"/>
+    /// <seealso cref="Speed"/>
+    /// <seealso cref="Torque"/>
+    /// <seealso cref="CalibrationOffset"/>
+    [XmlInclude(typeof(Control))]
+    [XmlInclude(typeof(TargetPosition))]
+    [XmlInclude(typeof(GateState))]
+    [XmlInclude(typeof(Speed))]
+    [XmlInclude(typeof(Torque))]
+    [XmlInclude(typeof(CalibrationOffset))]
+    [XmlInclude(typeof(TimestampedControl))]
+    [XmlInclude(typeof(TimestampedTargetPosition))]
+    [XmlInclude(typeof(TimestampedGateState))]
+    [XmlInclude(typeof(TimestampedSpeed))]
+    [XmlInclude(typeof(TimestampedTorque))]
+    [XmlInclude(typeof(TimestampedCalibrationOffset))]
+    [Description("Filters and selects specific messages reported by the VertiGate device.")]
+    public partial class Parse : ParseBuilder, INamedElement
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="Parse"/> class.
+        /// </summary>
+        public Parse()
+        {
+            Register = new Control();
+        }
+
+        string INamedElement.Name => $"{nameof(VertiGate)}.{GetElementDisplayName(Register)}";
+    }
+
+    /// <summary>
+    /// Represents an operator which formats a sequence of values as specific
+    /// VertiGate register messages.
+    /// </summary>
+    /// <seealso cref="Control"/>
+    /// <seealso cref="TargetPosition"/>
+    /// <seealso cref="GateState"/>
+    /// <seealso cref="Speed"/>
+    /// <seealso cref="Torque"/>
+    /// <seealso cref="CalibrationOffset"/>
+    [XmlInclude(typeof(Control))]
+    [XmlInclude(typeof(TargetPosition))]
+    [XmlInclude(typeof(GateState))]
+    [XmlInclude(typeof(Speed))]
+    [XmlInclude(typeof(Torque))]
+    [XmlInclude(typeof(CalibrationOffset))]
+    [Description("Formats a sequence of values as specific VertiGate register messages.")]
+    public partial class Format : FormatBuilder, INamedElement
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="Format"/> class.
+        /// </summary>
+        public Format()
+        {
+            Register = new Control();
+        }
+
+        string INamedElement.Name => $"{nameof(VertiGate)}.{GetElementDisplayName(Register)}";
+    }
+
+    /// <summary>
+    /// Represents a register that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+    /// </summary>
+    [Description("Commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.")]
+    public partial class Control
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="Control"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 32;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="Control"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.U8;
+
+        /// <summary>
+        /// Represents the length of the <see cref="Control"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 1;
+
+        /// <summary>
+        /// Returns the payload data for <see cref="Control"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static ControlFlags GetPayload(HarpMessage message)
+        {
+            return (ControlFlags)message.GetPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="Control"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<ControlFlags> GetTimestampedPayload(HarpMessage message)
+        {
+            var payload = message.GetTimestampedPayloadByte();
+            return Timestamped.Create((ControlFlags)payload.Value, payload.Seconds);
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="Control"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="Control"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, ControlFlags value)
+        {
+            return HarpMessage.FromByte(Address, messageType, (byte)value);
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="Control"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="Control"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, ControlFlags value)
+        {
+            return HarpMessage.FromByte(Address, timestamp, messageType, (byte)value);
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// Control register.
+    /// </summary>
+    /// <seealso cref="Control"/>
+    [Description("Filters and selects timestamped messages from the Control register.")]
+    public partial class TimestampedControl
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="Control"/> register. This field is constant.
+        /// </summary>
+        public const int Address = Control.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="Control"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<ControlFlags> GetPayload(HarpMessage message)
+        {
+            return Control.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
+    /// Represents a register that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+    /// </summary>
+    [Description("Target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.")]
+    public partial class TargetPosition
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="TargetPosition"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 33;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="TargetPosition"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.U8;
+
+        /// <summary>
+        /// Represents the length of the <see cref="TargetPosition"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 1;
+
+        /// <summary>
+        /// Returns the payload data for <see cref="TargetPosition"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static byte GetPayload(HarpMessage message)
+        {
+            return message.GetPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="TargetPosition"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<byte> GetTimestampedPayload(HarpMessage message)
+        {
+            return message.GetTimestampedPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="TargetPosition"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="TargetPosition"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, byte value)
+        {
+            return HarpMessage.FromByte(Address, messageType, value);
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="TargetPosition"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="TargetPosition"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, byte value)
+        {
+            return HarpMessage.FromByte(Address, timestamp, messageType, value);
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// TargetPosition register.
+    /// </summary>
+    /// <seealso cref="TargetPosition"/>
+    [Description("Filters and selects timestamped messages from the TargetPosition register.")]
+    public partial class TimestampedTargetPosition
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="TargetPosition"/> register. This field is constant.
+        /// </summary>
+        public const int Address = TargetPosition.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="TargetPosition"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<byte> GetPayload(HarpMessage message)
+        {
+            return TargetPosition.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
+    /// Represents a register that reports the current state of the gate.
+    /// </summary>
+    [Description("Reports the current state of the gate.")]
+    public partial class GateState
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="GateState"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 34;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="GateState"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.U8;
+
+        /// <summary>
+        /// Represents the length of the <see cref="GateState"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 1;
+
+        /// <summary>
+        /// Returns the payload data for <see cref="GateState"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static GateStatus GetPayload(HarpMessage message)
+        {
+            return (GateStatus)message.GetPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="GateState"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<GateStatus> GetTimestampedPayload(HarpMessage message)
+        {
+            var payload = message.GetTimestampedPayloadByte();
+            return Timestamped.Create((GateStatus)payload.Value, payload.Seconds);
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="GateState"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="GateState"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, GateStatus value)
+        {
+            return HarpMessage.FromByte(Address, messageType, (byte)value);
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="GateState"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="GateState"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, GateStatus value)
+        {
+            return HarpMessage.FromByte(Address, timestamp, messageType, (byte)value);
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// GateState register.
+    /// </summary>
+    /// <seealso cref="GateState"/>
+    [Description("Filters and selects timestamped messages from the GateState register.")]
+    public partial class TimestampedGateState
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="GateState"/> register. This field is constant.
+        /// </summary>
+        public const int Address = GateState.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="GateState"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<GateStatus> GetPayload(HarpMessage message)
+        {
+            return GateState.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
+    /// Represents a register that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+    /// </summary>
+    [Description("Movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.")]
+    public partial class Speed
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="Speed"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 35;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="Speed"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.U8;
+
+        /// <summary>
+        /// Represents the length of the <see cref="Speed"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 1;
+
+        /// <summary>
+        /// Returns the payload data for <see cref="Speed"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static byte GetPayload(HarpMessage message)
+        {
+            return message.GetPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="Speed"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<byte> GetTimestampedPayload(HarpMessage message)
+        {
+            return message.GetTimestampedPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="Speed"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="Speed"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, byte value)
+        {
+            return HarpMessage.FromByte(Address, messageType, value);
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="Speed"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="Speed"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, byte value)
+        {
+            return HarpMessage.FromByte(Address, timestamp, messageType, value);
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// Speed register.
+    /// </summary>
+    /// <seealso cref="Speed"/>
+    [Description("Filters and selects timestamped messages from the Speed register.")]
+    public partial class TimestampedSpeed
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="Speed"/> register. This field is constant.
+        /// </summary>
+        public const int Address = Speed.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="Speed"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<byte> GetPayload(HarpMessage message)
+        {
+            return Speed.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
+    /// Represents a register that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.
+    /// </summary>
+    [Description("Torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.")]
+    public partial class Torque
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="Torque"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 36;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="Torque"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.U8;
+
+        /// <summary>
+        /// Represents the length of the <see cref="Torque"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 1;
+
+        /// <summary>
+        /// Returns the payload data for <see cref="Torque"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static byte GetPayload(HarpMessage message)
+        {
+            return message.GetPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="Torque"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<byte> GetTimestampedPayload(HarpMessage message)
+        {
+            return message.GetTimestampedPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="Torque"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="Torque"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, byte value)
+        {
+            return HarpMessage.FromByte(Address, messageType, value);
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="Torque"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="Torque"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, byte value)
+        {
+            return HarpMessage.FromByte(Address, timestamp, messageType, value);
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// Torque register.
+    /// </summary>
+    /// <seealso cref="Torque"/>
+    [Description("Filters and selects timestamped messages from the Torque register.")]
+    public partial class TimestampedTorque
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="Torque"/> register. This field is constant.
+        /// </summary>
+        public const int Address = Torque.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="Torque"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<byte> GetPayload(HarpMessage message)
+        {
+            return Torque.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
+    /// Represents a register that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.
+    /// </summary>
+    [Description("Offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.")]
+    public partial class CalibrationOffset
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="CalibrationOffset"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 37;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="CalibrationOffset"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.S8;
+
+        /// <summary>
+        /// Represents the length of the <see cref="CalibrationOffset"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 1;
+
+        /// <summary>
+        /// Returns the payload data for <see cref="CalibrationOffset"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static sbyte GetPayload(HarpMessage message)
+        {
+            return message.GetPayloadSByte();
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="CalibrationOffset"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<sbyte> GetTimestampedPayload(HarpMessage message)
+        {
+            return message.GetTimestampedPayloadSByte();
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="CalibrationOffset"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="CalibrationOffset"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, sbyte value)
+        {
+            return HarpMessage.FromSByte(Address, messageType, value);
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="CalibrationOffset"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="CalibrationOffset"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, sbyte value)
+        {
+            return HarpMessage.FromSByte(Address, timestamp, messageType, value);
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// CalibrationOffset register.
+    /// </summary>
+    /// <seealso cref="CalibrationOffset"/>
+    [Description("Filters and selects timestamped messages from the CalibrationOffset register.")]
+    public partial class TimestampedCalibrationOffset
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="CalibrationOffset"/> register. This field is constant.
+        /// </summary>
+        public const int Address = CalibrationOffset.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="CalibrationOffset"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<sbyte> GetPayload(HarpMessage message)
+        {
+            return CalibrationOffset.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator which creates standard message payloads for the
+    /// VertiGate device.
+    /// </summary>
+    /// <seealso cref="CreateControlPayload"/>
+    /// <seealso cref="CreateTargetPositionPayload"/>
+    /// <seealso cref="CreateGateStatePayload"/>
+    /// <seealso cref="CreateSpeedPayload"/>
+    /// <seealso cref="CreateTorquePayload"/>
+    /// <seealso cref="CreateCalibrationOffsetPayload"/>
+    [XmlInclude(typeof(CreateControlPayload))]
+    [XmlInclude(typeof(CreateTargetPositionPayload))]
+    [XmlInclude(typeof(CreateGateStatePayload))]
+    [XmlInclude(typeof(CreateSpeedPayload))]
+    [XmlInclude(typeof(CreateTorquePayload))]
+    [XmlInclude(typeof(CreateCalibrationOffsetPayload))]
+    [XmlInclude(typeof(CreateTimestampedControlPayload))]
+    [XmlInclude(typeof(CreateTimestampedTargetPositionPayload))]
+    [XmlInclude(typeof(CreateTimestampedGateStatePayload))]
+    [XmlInclude(typeof(CreateTimestampedSpeedPayload))]
+    [XmlInclude(typeof(CreateTimestampedTorquePayload))]
+    [XmlInclude(typeof(CreateTimestampedCalibrationOffsetPayload))]
+    [Description("Creates standard message payloads for the VertiGate device.")]
+    public partial class CreateMessage : CreateMessageBuilder, INamedElement
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CreateMessage"/> class.
+        /// </summary>
+        public CreateMessage()
+        {
+            Payload = new CreateControlPayload();
+        }
+
+        string INamedElement.Name => $"{nameof(VertiGate)}.{GetElementDisplayName(Payload)}";
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+    /// </summary>
+    [DisplayName("ControlPayload")]
+    [Description("Creates a message payload that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.")]
+    public partial class CreateControlPayload
+    {
+        /// <summary>
+        /// Gets or sets the value that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+        /// </summary>
+        [Description("The value that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.")]
+        public ControlFlags Control { get; set; }
+
+        /// <summary>
+        /// Creates a message payload for the Control register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public ControlFlags GetPayload()
+        {
+            return Control;
+        }
+
+        /// <summary>
+        /// Creates a message that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the Control register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.Control.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+    /// </summary>
+    [DisplayName("TimestampedControlPayload")]
+    [Description("Creates a timestamped message payload that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.")]
+    public partial class CreateTimestampedControlPayload : CreateControlPayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the Control register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.Control.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+    /// </summary>
+    [DisplayName("TargetPositionPayload")]
+    [Description("Creates a message payload that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.")]
+    public partial class CreateTargetPositionPayload
+    {
+        /// <summary>
+        /// Gets or sets the value that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+        /// </summary>
+        [Range(min: 0, max: 255)]
+        [Editor(DesignTypes.NumericUpDownEditor, DesignTypes.UITypeEditor)]
+        [Description("The value that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.")]
+        public byte TargetPosition { get; set; } = 0;
+
+        /// <summary>
+        /// Creates a message payload for the TargetPosition register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public byte GetPayload()
+        {
+            return TargetPosition;
+        }
+
+        /// <summary>
+        /// Creates a message that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the TargetPosition register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.TargetPosition.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+    /// </summary>
+    [DisplayName("TimestampedTargetPositionPayload")]
+    [Description("Creates a timestamped message payload that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.")]
+    public partial class CreateTimestampedTargetPositionPayload : CreateTargetPositionPayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the TargetPosition register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.TargetPosition.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that reports the current state of the gate.
+    /// </summary>
+    [DisplayName("GateStatePayload")]
+    [Description("Creates a message payload that reports the current state of the gate.")]
+    public partial class CreateGateStatePayload
+    {
+        /// <summary>
+        /// Gets or sets the value that reports the current state of the gate.
+        /// </summary>
+        [Description("The value that reports the current state of the gate.")]
+        public GateStatus GateState { get; set; }
+
+        /// <summary>
+        /// Creates a message payload for the GateState register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public GateStatus GetPayload()
+        {
+            return GateState;
+        }
+
+        /// <summary>
+        /// Creates a message that reports the current state of the gate.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the GateState register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.GateState.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that reports the current state of the gate.
+    /// </summary>
+    [DisplayName("TimestampedGateStatePayload")]
+    [Description("Creates a timestamped message payload that reports the current state of the gate.")]
+    public partial class CreateTimestampedGateStatePayload : CreateGateStatePayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that reports the current state of the gate.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the GateState register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.GateState.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+    /// </summary>
+    [DisplayName("SpeedPayload")]
+    [Description("Creates a message payload that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.")]
+    public partial class CreateSpeedPayload
+    {
+        /// <summary>
+        /// Gets or sets the value that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+        /// </summary>
+        [Range(min: 0, max: 255)]
+        [Editor(DesignTypes.NumericUpDownEditor, DesignTypes.UITypeEditor)]
+        [Description("The value that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.")]
+        public byte Speed { get; set; } = 255;
+
+        /// <summary>
+        /// Creates a message payload for the Speed register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public byte GetPayload()
+        {
+            return Speed;
+        }
+
+        /// <summary>
+        /// Creates a message that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the Speed register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.Speed.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+    /// </summary>
+    [DisplayName("TimestampedSpeedPayload")]
+    [Description("Creates a timestamped message payload that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.")]
+    public partial class CreateTimestampedSpeedPayload : CreateSpeedPayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the Speed register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.Speed.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.
+    /// </summary>
+    [DisplayName("TorquePayload")]
+    [Description("Creates a message payload that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.")]
+    public partial class CreateTorquePayload
+    {
+        /// <summary>
+        /// Gets or sets the value that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.
+        /// </summary>
+        [Range(min: 0, max: 127)]
+        [Editor(DesignTypes.NumericUpDownEditor, DesignTypes.UITypeEditor)]
+        [Description("The value that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.")]
+        public byte Torque { get; set; } = 35;
+
+        /// <summary>
+        /// Creates a message payload for the Torque register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public byte GetPayload()
+        {
+            return Torque;
+        }
+
+        /// <summary>
+        /// Creates a message that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the Torque register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.Torque.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.
+    /// </summary>
+    [DisplayName("TimestampedTorquePayload")]
+    [Description("Creates a timestamped message payload that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.")]
+    public partial class CreateTimestampedTorquePayload : CreateTorquePayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the Torque register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.Torque.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.
+    /// </summary>
+    [DisplayName("CalibrationOffsetPayload")]
+    [Description("Creates a message payload that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.")]
+    public partial class CreateCalibrationOffsetPayload
+    {
+        /// <summary>
+        /// Gets or sets the value that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.
+        /// </summary>
+        [Range(min: -128, max: 127)]
+        [Editor(DesignTypes.NumericUpDownEditor, DesignTypes.UITypeEditor)]
+        [Description("The value that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.")]
+        public sbyte CalibrationOffset { get; set; } = 0;
+
+        /// <summary>
+        /// Creates a message payload for the CalibrationOffset register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public sbyte GetPayload()
+        {
+            return CalibrationOffset;
+        }
+
+        /// <summary>
+        /// Creates a message that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the CalibrationOffset register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.CalibrationOffset.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.
+    /// </summary>
+    [DisplayName("TimestampedCalibrationOffsetPayload")]
+    [Description("Creates a timestamped message payload that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.")]
+    public partial class CreateTimestampedCalibrationOffsetPayload : CreateCalibrationOffsetPayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that offset applied to the fully-raised position, to trim the end stop without moving hardware. One count is one encoder count, 25 µm.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the CalibrationOffset register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.CalibrationOffset.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Commands accepted by the Control register.
+    /// </summary>
+    [Flags]
+    public enum ControlFlags : byte
+    {
+        /// <summary>
+        /// Specifies that no flags are defined.
+        /// </summary>
+        None = 0x0,
+
+        /// <summary>
+        /// Turn the motor torque on. The gate holds its position.
+        /// </summary>
+        [Description("Turn the motor torque on. The gate holds its position.")]
+        EnableMotor = 0x1,
+
+        /// <summary>
+        /// Turn the motor torque off. The gate can be moved by hand.
+        /// </summary>
+        [Description("Turn the motor torque off. The gate can be moved by hand.")]
+        DisableMotor = 0x2,
+
+        /// <summary>
+        /// Stop the current movement and hold the position.
+        /// </summary>
+        [Description("Stop the current movement and hold the position.")]
+        Stop = 0x4,
+
+        /// <summary>
+        /// Move the gate to the lower end stop and record it as home.
+        /// </summary>
+        [Description("Move the gate to the lower end stop and record it as home.")]
+        Calibrate = 0x8,
+
+        /// <summary>
+        /// Start sending Position events.
+        /// </summary>
+        [Description("Start sending Position events.")]
+        EnablePositionEvent = 0x10,
+
+        /// <summary>
+        /// Stop sending Position events.
+        /// </summary>
+        [Description("Stop sending Position events.")]
+        DisablePositionEvent = 0x20,
+
+        /// <summary>
+        /// Start sending ServoTelemetry events.
+        /// </summary>
+        [Description("Start sending ServoTelemetry events.")]
+        EnableTelemetryEvent = 0x40,
+
+        /// <summary>
+        /// Stop sending ServoTelemetry events.
+        /// </summary>
+        [Description("Stop sending ServoTelemetry events.")]
+        DisableTelemetryEvent = 0x80
+    }
+
+    /// <summary>
+    /// Enumerates the possible states of the gate.
+    /// </summary>
+    public enum GateStatus : byte
+    {
+        /// <summary>
+        /// The gate is stationary and not at a known end stop.
+        /// </summary>
+        [Description("The gate is stationary and not at a known end stop.")]
+        Idle = 0,
+
+        /// <summary>
+        /// The gate is fully raised up.
+        /// </summary>
+        [Description("The gate is fully raised up.")]
+        Up = 1,
+
+        /// <summary>
+        /// The gate is fully lowered down.
+        /// </summary>
+        [Description("The gate is fully lowered down.")]
+        Down = 2,
+
+        /// <summary>
+        /// The gate is moving towards a target position.
+        /// </summary>
+        [Description("The gate is moving towards a target position.")]
+        Moving = 3,
+
+        /// <summary>
+        /// The gate is moving to the lower end stop to find home.
+        /// </summary>
+        [Description("The gate is moving to the lower end stop to find home.")]
+        Calibrating = 4,
+
+        /// <summary>
+        /// The last movement or calibration failed.
+        /// </summary>
+        [Description("The last movement or calibration failed.")]
+        Error = 255
+    }
+
+    internal static partial class PayloadMarshal
+    {
+        internal static T[] GetSubArray<T>(T[] array, int offset, int count)
+        {
+            var result = new T[count];
+            Array.Copy(array, offset, result, 0, count);
+            return result;
+        }
+
+        internal static byte ReadByte(ArraySegment<byte> segment) => segment.Array[segment.Offset];
+
+        internal static sbyte ReadSByte(ArraySegment<byte> segment) => (sbyte)segment.Array[segment.Offset];
+
+        internal static ushort ReadUInt16(ArraySegment<byte> segment) => BitConverter.ToUInt16(segment.Array, segment.Offset);
+
+        internal static short ReadInt16(ArraySegment<byte> segment) => BitConverter.ToInt16(segment.Array, segment.Offset);
+
+        internal static uint ReadUInt32(ArraySegment<byte> segment) => BitConverter.ToUInt32(segment.Array, segment.Offset);
+
+        internal static int ReadInt32(ArraySegment<byte> segment) => BitConverter.ToInt32(segment.Array, segment.Offset);
+
+        internal static ulong ReadUInt64(ArraySegment<byte> segment) => BitConverter.ToUInt64(segment.Array, segment.Offset);
+
+        internal static long ReadInt64(ArraySegment<byte> segment) => BitConverter.ToInt64(segment.Array, segment.Offset);
+
+        internal static float ReadSingle(ArraySegment<byte> segment) => BitConverter.ToSingle(segment.Array, segment.Offset);
+
+        internal static string ReadUtf8String(ArraySegment<byte> segment)
+        {
+            var count = Array.IndexOf(segment.Array, (byte)0, segment.Offset, segment.Count) - segment.Offset;
+            return System.Text.Encoding.UTF8.GetString(segment.Array, segment.Offset, count < 0 ? segment.Count : count);
+        }
+
+        internal static void Write(ArraySegment<byte> segment, byte value) => segment.Array[segment.Offset] = value;
+
+        internal static void Write(ArraySegment<byte> segment, sbyte value) => segment.Array[segment.Offset] = (byte)value;
+
+        internal static void Write(ArraySegment<byte> segment, ushort value)
+        {
+            segment.Array[segment.Offset] = (byte)value;
+            segment.Array[segment.Offset + 1] = (byte)(value >> 8);
+        }
+
+        internal static void Write(ArraySegment<byte> segment, short value)
+        {
+            segment.Array[segment.Offset] = (byte)value;
+            segment.Array[segment.Offset + 1] = (byte)(value >> 8);
+        }
+
+        internal static void Write(ArraySegment<byte> segment, uint value)
+        {
+            segment.Array[segment.Offset] = (byte)value;
+            segment.Array[segment.Offset + 1] = (byte)(value >> 8);
+            segment.Array[segment.Offset + 2] = (byte)(value >> 16);
+            segment.Array[segment.Offset + 3] = (byte)(value >> 24);
+        }
+
+        internal static void Write(ArraySegment<byte> segment, int value)
+        {
+            segment.Array[segment.Offset] = (byte)value;
+            segment.Array[segment.Offset + 1] = (byte)(value >> 8);
+            segment.Array[segment.Offset + 2] = (byte)(value >> 16);
+            segment.Array[segment.Offset + 3] = (byte)(value >> 24);
+        }
+
+        internal static void Write(ArraySegment<byte> segment, ulong value)
+        {
+            segment.Array[segment.Offset] = (byte)value;
+            segment.Array[segment.Offset + 1] = (byte)(value >> 8);
+            segment.Array[segment.Offset + 2] = (byte)(value >> 16);
+            segment.Array[segment.Offset + 3] = (byte)(value >> 24);
+            segment.Array[segment.Offset + 4] = (byte)(value >> 32);
+            segment.Array[segment.Offset + 5] = (byte)(value >> 40);
+            segment.Array[segment.Offset + 6] = (byte)(value >> 48);
+            segment.Array[segment.Offset + 7] = (byte)(value >> 56);
+        }
+
+        internal static void Write(ArraySegment<byte> segment, long value)
+        {
+            segment.Array[segment.Offset] = (byte)value;
+            segment.Array[segment.Offset + 1] = (byte)(value >> 8);
+            segment.Array[segment.Offset + 2] = (byte)(value >> 16);
+            segment.Array[segment.Offset + 3] = (byte)(value >> 24);
+            segment.Array[segment.Offset + 4] = (byte)(value >> 32);
+            segment.Array[segment.Offset + 5] = (byte)(value >> 40);
+            segment.Array[segment.Offset + 6] = (byte)(value >> 48);
+            segment.Array[segment.Offset + 7] = (byte)(value >> 56);
+        }
+
+        internal static unsafe void Write(ArraySegment<byte> segment, float value) => Write(segment, *(int*)&value);
+
+        internal static unsafe void Write(ArraySegment<byte> segment, string value) =>
+            System.Text.Encoding.UTF8.GetBytes(value, 0, Math.Min(value.Length, segment.Count), segment.Array, segment.Offset);
+
+        internal static void Write<T>(ArraySegment<byte> segment, T[] values) where T : unmanaged
+        {
+            Buffer.BlockCopy(values, 0, segment.Array, segment.Offset, segment.Count);
+        }
+
+        internal static void Write<T>(ArraySegment<T> segment, T[] values)
+        {
+            Array.Copy(values, 0, segment.Array, segment.Offset, segment.Count);
+        }
+    }
+}
