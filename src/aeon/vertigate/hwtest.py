@@ -5,7 +5,8 @@ Run from the repository root, with the Harp port of the board:
     uv run vertigate-test --port COM4
 
 What it does, in order:
-    1. Reads WhoAmI and the Status register.
+    1. Reads the registers Bonsai reads on connect (WhoAmI, versions, name)
+       and prints them the way the Bonsai console does. Then reads Status.
     2. Sends a bad Control write (Enable + Disable) and expects an error reply.
     3. Raises the gate, sends Stop after 0.5 s, and expects the gate to stop.
     4. Sends Calibrate and waits for Status to go Calibrating, then Down.
@@ -27,7 +28,13 @@ PT_U8, PT_U16 = 1, 2
 PT_TIMESTAMP = 0x10
 
 R_WHO_AM_I = 0
+R_HW_VERSION_H, R_HW_VERSION_L = 1, 2
+R_ASSEMBLY_VERSION = 3
+R_CORE_VERSION_H, R_CORE_VERSION_L = 4, 5
+R_FW_VERSION_H, R_FW_VERSION_L = 6, 7
 R_OP_CTRL = 10
+R_DEVICE_NAME = 12
+R_SERIAL_NUMBER = 13
 OP_ACTIVE = 0x01
 
 ADDR_CONTROL = 32
@@ -117,6 +124,32 @@ def read_u8(ser, address):
     return None if f is None or not f["payload"] else f["payload"][0]
 
 
+def read_u16(ser, address):
+    f = request(ser, MSG_READ, address, PT_U16)
+    return None if f is None or len(f["payload"]) < 2 else struct.unpack("<H", f["payload"][:2])[0]
+
+
+def read_str(ser, address):
+    f = request(ser, MSG_READ, address, PT_U8)
+    return None if f is None else f["payload"].split(b"\x00", 1)[0].decode("ascii", "replace")
+
+
+def print_identity(ser):
+    """Read what Bonsai reads when the Device node connects, and print it
+    the way the Bonsai console does. Returns the WhoAmI value."""
+    who = read_u16(ser, R_WHO_AM_I)
+    hw = (read_u8(ser, R_HW_VERSION_H), read_u8(ser, R_HW_VERSION_L))
+    fw = (read_u8(ser, R_FW_VERSION_H), read_u8(ser, R_FW_VERSION_L))
+    core = (read_u8(ser, R_CORE_VERSION_H), read_u8(ser, R_CORE_VERSION_L))
+    asm = read_u8(ser, R_ASSEMBLY_VERSION)
+    name = read_str(ser, R_DEVICE_NAME)
+    serial_no = read_u16(ser, R_SERIAL_NUMBER)
+    print(f"  Bonsai console line:  Serial Harp device. WhoAmI: {who} Hw: {hw[0]}.{hw[1]} Fw: {fw[0]}.{fw[1]} DeviceName: {name}")
+    print(f"  Device Setup dialog:  DeviceName={name} WhoAmI={who} HardwareVersion={hw[0]}.{hw[1]}")
+    print(f"                        FirmwareVersion={fw[0]}.{fw[1]} CoreVersion={core[0]}.{core[1]} AssemblyVersion={asm} SerialNumber={serial_no}")
+    return who
+
+
 def write_u8(ser, address, value):
     return request(ser, MSG_WRITE, address, PT_U8, bytes([value]))
 
@@ -147,9 +180,8 @@ def main():
         time.sleep(0.2)
         ser.reset_input_buffer()
 
-        print("1. Identity and state")
-        f = request(ser, MSG_READ, R_WHO_AM_I, PT_U16)
-        who = struct.unpack("<H", f["payload"])[0] if f else None
+        print("1. Identity and state, as Bonsai sees it on connect")
+        who = print_identity(ser)
         results.append(check(who is not None, f"WhoAmI = {who}"))
         write_u8(ser, R_OP_CTRL, OP_ACTIVE)  # events are only sent in ACTIVE mode
         v = read_u8(ser, ADDR_STATUS)
