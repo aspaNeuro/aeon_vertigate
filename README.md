@@ -6,7 +6,7 @@
 
 A [Harp](https://harp-tech.org/) device that controls a vertical gate. A Dynamixel XM430-W210 servo moves the gate.
 
-VertiGate is a Harp device (WhoAmI **3002**, proposed for the SWC block 3000 to 3500, not registered yet) on a USB CDC serial port. The gate has 256 positions. 0 is fully down and 255 is fully up. The device reports the gate state as a Harp event.
+VertiGate is a Harp device on a USB CDC serial port. Its WhoAmI is **3002**. That value is proposed for the SWC block 3000 to 3500. It is not registered yet. The gate has 256 positions. 0 is fully down and 255 is fully up. The device reports the gate state as a Harp event.
 
 ## 🔧 Features
 
@@ -82,15 +82,24 @@ uv run mpremote connect COM3 resume cat :error.log
 
 ### Testing
 
-With the board connected and the Harp port known (for example `COM4`):
+There are two tests. The first drives the device and checks what it does. The second checks
+the device against the Harp specification. Both use the Harp port.
+
+**The hardware test.** With the board connected and the Harp port known (for example `COM4`):
 
 ```bash
+uv sync --all-extras
 uv run vertigate-test --port COM4
 ```
 
-The test checks the `Control` register and prints `PASS` or `FAIL` for each step. It works
-with or without a servo. Without a servo the gate reports the `Error` state, and the script
-expects that.
+It runs 28 checks and prints `PASS` or `FAIL` for each one. It takes about a minute, because
+it reboots the board four times to prove the non-volatile settings survive. Add `--no-reboot`
+to skip that part, which leaves 9 checks and takes a few seconds.
+
+The test works with or without a servo. Without a servo the gate reports the `Error` state,
+and the test expects that.
+
+**The conformance test.** See [Checking the device against the specification](#checking-the-device-against-the-specification).
 
 ### Basic usage
 
@@ -118,13 +127,13 @@ built with `Bonsai.Gui`.
 | Speed, Torque, Calibration offset | Set a value, then press Apply |
 
 The three settings need an Apply button because `device.yml` marks them
-non-volatile. Every write is stored on the flash, and the firmware switches the
-motor off and on to change the speed or the torque. A slider that wrote on
+non-volatile. The firmware stores every write on the flash. It also switches
+the motor off and on to change the speed or the torque. A slider that wrote on
 every step would do both many times a second.
 
-Each of those sliders starts at the value the device reports, and the label
-beside it shows what the device holds now. The two can differ: the firmware
-masks `Torque` to 7 bits, so a write of 200 is stored as 72.
+Each of those sliders starts at the value the device reports. The label beside
+it shows what the device holds now. The two can differ. The firmware masks
+`Torque` to 7 bits, so it stores a write of 200 as 72.
 
 Set the port on the `VertiGate.Device` node before you start. Use the Harp
 port, not the REPL port.
@@ -134,13 +143,13 @@ port, not the REPL port.
 `.bonsai/` pins the Bonsai version and the packages, so everyone runs the
 example workflow on the same environment. It holds Bonsai 2.9.1, `Bonsai.Harp`,
 `Bonsai.Harp.Design`, which is the one that shows the Device Setup dialog, and
-`Bonsai.Gui`, which the panel is built with. Bonsai installs itself into that
-folder on first use, and the downloaded files are ignored by git.
+`Bonsai.Gui`, which builds the panel. Bonsai installs itself into that folder
+on first use. `.gitignore` keeps the downloaded files out.
 
 `Aeon.VertiGate` is in that list too, so the workflow opens with the typed
-operators already loaded. It is pinned at `42.42.42-dev0`, the version every
-local build produces, and `.bonsai/NuGet.config` points at
-`artifacts/package/release` so Bonsai can find it.
+operators already loaded. The pin is `42.42.42-dev0`, the version every local
+build produces. `.bonsai/NuGet.config` points at `artifacts/package/release`,
+so Bonsai finds it.
 
 **Build the package before you start Bonsai for the first time**, or it will
 not find `Aeon.VertiGate`:
@@ -233,8 +242,25 @@ port:
 dotnet harp.toolkit verify --port COM4 --metadata device.yml --report artifacts/verify.html
 ```
 
-It runs 51 checks and writes an HTML report. It exits with 1 if any check
-fails, so it can also run in CI. Some checks fail today. See the open issues.
+It runs 51 checks and writes an HTML report. It exits with 1 if any check fails,
+so it can also run in CI.
+
+Five checks do not pass today. All five are known:
+
+| Check | Result | Why |
+| ----- | ------ | --- |
+| `R_CLOCK_CONFIG::LockRefusesTimestampWrite` | Failed | The core stores `CLOCK_LOCK` but does not act on it. A write to the timestamp is accepted while the clock is locked. This is in `micropython-microharp`, not in this firmware. |
+| `DeviceInterfaceSuite::Control` | Error | The register is write only, so `verify` cannot read it back. Issue #6. |
+| `DeviceInterfaceSuite::TargetPosition` | Error | The same. Issue #6. |
+| `ClockTestSuite::SimultaneousWhoAmI` | Skipped | Needs `--clock-port` and a second Harp device as a reference clock. |
+| `ClockTestSuite::PpsEventAlignment` | Skipped | The same. |
+
+So CI must expect exit code 1 until issue #6 is closed and the core gains the
+`CLOCK_LOCK` guard.
+
+One check is worth knowing about: `DeviceInterfaceSuite::GenerateAndCompileInterface`
+generates the C# from `device.yml` and compiles it. So `verify` already tells you
+whether `device.yml` still produces a valid interface.
 
 ## ⚙️ Configuration & Tuning
 
