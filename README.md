@@ -213,6 +213,27 @@ uv run tools/firmware_version.py
 Commit the result. Do not edit the generated files by hand. They say so at the
 top, and the next run would overwrite the change.
 
+### Building the firmware image
+
+The release image is a MicroPython build with the application frozen in. The inputs are in `firmware/`:
+
+- `vertigate/`: the application.
+- `lib/`: `micropython-microharp` and `micropython-dynamixel` as git submodules, pinned to the versions the application is tested with. Clone with `git clone --recursive`, or run `git submodule update --init` in an existing clone.
+- `boards/NEUROPICO/`: the MicroPython board definition. It reuses the Seeed XIAO RP2350 board support, pins the flash size to 2 MB and the file system to 1 MiB, and names the modules to freeze in `manifest.py`.
+
+CI builds the image on every push and attaches it to releases. To build it locally on Linux, with `gcc-arm-none-eabi` 13, `cmake` and `picotool` installed (GCC 15 rejects a warning in the bundled mbedtls, so use the GCC 13 toolchain CI uses):
+
+```bash
+git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git
+make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/NEUROPICO submodules
+make -C micropython/mpy-cross
+make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/NEUROPICO
+```
+
+The image is `micropython/ports/rp2/build-NEUROPICO/firmware.uf2`. Use the same MicroPython version as CI, set in the workflow file.
+
+The release tag must match `firmwareVersion` in `device.yml` in its major and minor parts. CI checks this and stops the release if they differ.
+
 ### Building the Bonsai package
 
 ```bash
