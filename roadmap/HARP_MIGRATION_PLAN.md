@@ -311,7 +311,7 @@ firmware, the generated interfaces, the Bonsai workflow, and the documentation.
 
 Real defects in the current code:
 
-- **S8 payloads are decoded as unsigned.** [`firmware/register.py:44-47`](../firmware/register.py#L44-L47)
+- **S8 payloads are decoded as unsigned.** [`firmware/vertigate/register.py:44-47`](../firmware/vertigate/register.py#L44-L47)
   does `offset = payload[0]` on a memoryview, so a written `-10` arrives as `246`, and
   `max(min(246, 127), -128)` clamps it to `+127`. **Negative offsets are impossible today.**
   Needs `struct.unpack` or an explicit sign fix.
@@ -320,7 +320,7 @@ Real defects in the current code:
   applies `val & 0x7F`. `_speed` stores the raw byte and then applies `vel & 0xFF` plus a `+60`
   offset. Write `200` to Torque and the device replies `200` while running at `72`. Either clamp
   before storing, or reject out-of-range writes with an error reply (spec case 5 allows this).
-- **Version registers are wrong.** [`firmware/main.py`](../firmware/main.py) passes `who_am_i`
+- **Version registers are wrong.** [`firmware/vertigate/main.py`](../firmware/vertigate/main.py) passes `who_am_i`
   and `device_name` but not `fw_version` / `hw_version`, so microharp defaults to `(1,0)` /
   `(1,0)` while `device.yml` declares `0.1` / `0.1`. `R_HW_VERSION_H/L`, `R_FW_VERSION_H/L` and
   bytes 3 to 8 of `R_VERSION` are all wrong.
@@ -336,7 +336,7 @@ Real defects in the current code:
   so the device always comes up on the bus.
 - **Stale `_ismoving` after a new command.** `move()` cancels the running `_run()` task. The
   cancelled task never runs `_disable()`, so state can be left inconsistent. The `isr.set()` /
-  `clear()` pattern in [`firmware/task.py`](../firmware/task.py) can also merge two quick
+  `clear()` pattern in [`firmware/vertigate/task.py`](../firmware/vertigate/task.py) can also merge two quick
   transitions into one event.
 - **Torque and Speed setters switch `torque_enabled` off and on.** Writing Speed while the gate
   is holding will drop the gate. Document this, or make the setters wait while the gate is
@@ -413,7 +413,7 @@ stored state, sends one READ per core register, then calls `dump_app_registers()
 write reply first, then `_dump_all_registers()` sends one READ per register, each with its own
 timestamp, then clears the bit. It also calls `on_read` handlers.
 
-**The payloads are wrong.** In [`firmware/register.py:14-18`](../firmware/register.py#L14-L18)
+**The payloads are wrong.** In [`firmware/vertigate/register.py:14-18`](../firmware/vertigate/register.py#L14-L18)
 all five application registers are created with no initial value and **no `on_read` handler**,
 and `RegisterEntry.storage` is a zeroed `bytearray`. A dump right after boot reports:
 
