@@ -12,9 +12,8 @@ launchSettings.json
 # MicroPython firmware development
 .vscode/
 .micropico
-firmware/lib/
 firmware/typings/
 firmware/build/
-firmware/test.py
+firmware/vertigate/test.py
 __pycache__/
 *.pyc
