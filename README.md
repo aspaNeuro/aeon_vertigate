@@ -104,7 +104,30 @@ Write one byte to the **TargetPosition** register (`0x21`):
 
 Read the **GateState** register (`0x22`), or subscribe to its event, to follow the gate state.
 
-A Bonsai workflow is provided in `docs/workflows/GateControl.bonsai`.
+### The example workflow
+
+Open `docs/workflows/GateControl.bonsai`. It owns the device and nothing else.
+The panel it shows is `docs/workflows/Extensions/GateControlPanel.bonsai`,
+built with `Bonsai.Gui`.
+
+| Control | What it does |
+| ------- | ------------ |
+| Lower down, Raise up | Move the gate to an end stop |
+| Calibrate, Stop, Enable motor, Disable motor | Send one `Control` command |
+| Position slider | Move the gate. The gate follows the slider |
+| Speed, Torque, Calibration offset | Set a value, then press Apply |
+
+The three settings need an Apply button because `device.yml` marks them
+non-volatile. Every write is stored on the flash, and the firmware switches the
+motor off and on to change the speed or the torque. A slider that wrote on
+every step would do both many times a second.
+
+Each of those sliders starts at the value the device reports, and the label
+beside it shows what the device holds now. The two can differ: the firmware
+masks `Torque` to 7 bits, so a write of 200 is stored as 72.
+
+Set the port on the `VertiGate.Device` node before you start. Use the Harp
+port, not the REPL port.
 
 ### The pinned Bonsai environment
 
