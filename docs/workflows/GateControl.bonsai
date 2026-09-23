@@ -20,24 +20,17 @@
           <harp:DumpRegisters>true</harp:DumpRegisters>
           <harp:VisualIndicators>On</harp:VisualIndicators>
           <harp:Heartbeat>Disabled</harp:Heartbeat>
-          <harp:IgnoreErrors>false</harp:IgnoreErrors>
+          <harp:IgnoreErrors>true</harp:IgnoreErrors>
           <harp:PortName>COM4</harp:PortName>
         </Combinator>
       </Expression>
       <Expression xsi:type="rx:PublishSubject">
         <Name>Events</Name>
       </Expression>
-      <Expression xsi:type="harp:Parse">
-        <harp:Register xsi:type="harp:ParseMessagePayload">
-          <harp:PayloadType>U8</harp:PayloadType>
-          <harp:IsArray>false</harp:IsArray>
-        </harp:Register>
-      </Expression>
       <Expression xsi:type="IncludeWorkflow" Path="Extensions\GateControlPanel.bonsai" />
     </Nodes>
     <Edges>
       <Edge From="0" To="2" Label="Source1" />
-      <Edge From="0" To="4" Label="Source1" />
       <Edge From="1" To="2" Label="Source2" />
       <Edge From="2" To="3" Label="Source1" />
     </Edges>
