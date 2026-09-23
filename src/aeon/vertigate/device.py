@@ -21,15 +21,18 @@ __all__ = [
     "DEVICE_NAME",
     "WHO_AM_I",
     "ControlFlags",
+    "MotorStatus",
     "GateStatus",
     "ControlPayload",
     "GateStatePayload",
+    "MotorStatePayload",
     "Control",
     "TargetPosition",
     "GateState",
     "Speed",
     "Torque",
     "CalibrationOffset",
+    "MotorState",
     "REGISTER_MAP",
 ]
 
@@ -63,6 +66,16 @@ class ControlFlags(enum.IntFlag):
 
     DISABLE_TELEMETRY_EVENT = 0x80
     """Stop sending ServoTelemetry events."""
+
+
+class MotorStatus(enum.IntEnum):
+    """Enumerates the states of the gate motor."""
+
+    DISABLED = 0
+    """The motor is off. The gate refuses to move until the motor is enabled."""
+
+    ENABLED = 1
+    """The motor is on and holds the gate."""
 
 
 class GateStatus(enum.IntEnum):
@@ -99,6 +112,12 @@ class GateStatePayload(AnonymousPayload[np.uint8]):
     __value__: GateStatus = GroupMask(enum=GateStatus, mask=0xFF)
 
 
+class MotorStatePayload(AnonymousPayload[np.uint8]):
+    """Represents the payload of the MotorState register."""
+
+    __value__: MotorStatus = GroupMask(enum=MotorStatus, mask=0xFF)
+
+
 class Control(RegisterBase[ControlFlags]):
     """Commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply."""
 
@@ -128,7 +147,7 @@ class Speed(RegisterU8):
 
 
 class Torque(RegisterU8):
-    """Torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor torque off and on, so the gate drops for a moment if it is holding a position."""
+    """Torque limit applied to the gate motor, as a servo current limit. Values are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled."""
 
     address: ClassVar[int] = 36
 
@@ -139,6 +158,14 @@ class CalibrationOffset(RegisterS8):
     address: ClassVar[int] = 37
 
 
+class MotorState(RegisterBase[MotorStatus]):
+    """Reports whether the motor holds the gate. DisableMotor and EnableMotor set it."""
+
+    address: ClassVar[int] = 38
+    payload_type: ClassVar[PayloadType] = PayloadType.U8
+    payload_class = MotorStatePayload
+
+
 REGISTER_MAP: dict[int, type[RegisterBase[Any]]] = {
     **_CORE_REGISTER_MAP,
     32: Control,
@@ -147,4 +174,5 @@ REGISTER_MAP: dict[int, type[RegisterBase[Any]]] = {
     35: Speed,
     36: Torque,
     37: CalibrationOffset,
+    38: MotorState,
 }

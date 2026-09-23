@@ -15,6 +15,7 @@ ADDR_GATE_STATE = 0x22
 ADDR_SPD = 0x23
 ADDR_TRQ = 0x24
 ADDR_CALIBRATION_OFFSET = 0x25
+ADDR_MOTOR_STATE = 0x26
 
 # Registers marked `volatile: false` in device.yml, with the `defaultValue`
 # declared there. Keep both in step with device.yml.
@@ -54,6 +55,7 @@ ERR_BAD_VALUE = const(1)
 ERR_SERVO = const(2)
 ERR_READ_ONLY_BIT = const(3)
 ERR_STORAGE = const(4)
+ERR_MOTOR_DISABLED = const(5)
 
 
 def _write_register(device, address, value):
@@ -136,10 +138,15 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
     device.add_u8(ADDR_TRQ, access=READ_WRITE, name="Torque")
     # microharp has no add_s8 helper. Use the generic form.
     device.add_register(ADDR_CALIBRATION_OFFSET, PT_S8, access=READ_WRITE, name="CalibrationOffset")
+    device.add_u8(ADDR_MOTOR_STATE, access=READ_ONLY | EVENT, name="MotorState")
 
     @device.on_read(address=ADDR_GATE_STATE, payload_type=PT_U8, name="GateState")
     async def _gate_state(reg):
         reg.storage[0] = gate.status
+
+    @device.on_read(address=ADDR_MOTOR_STATE, payload_type=PT_U8, name="MotorState")
+    async def _motor_state(reg):
+        reg.storage[0] = 1 if gate.motor_enabled else 0
 
     @device.on_write(address=ADDR_CONTROL, payload_type=PT_U8, name="Control")
     async def _control(reg, payload):
@@ -149,6 +156,10 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
         for pair in CTRL_PAIRS:
             if cmd & pair == pair:
                 return ERR_BAD_VALUE
+        # Calibration moves the gate, so it needs the motor. A write that
+        # enables the motor in the same command is allowed to calibrate.
+        if cmd & CTRL_CALIBRATE and not gate.motor_enabled and not cmd & CTRL_ENABLE_MOTOR:
+            return ERR_MOTOR_DISABLED
         reg.storage[0] = cmd
 
         try:
@@ -174,6 +185,10 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
 
     @device.on_write(address=ADDR_TARGET_POSITION, payload_type=PT_U8, name="TargetPosition")
     async def _target_position(reg, payload):
+        # DisableMotor is a state, not a one-off command. The gate does not
+        # move until the host enables the motor again.
+        if not gate.motor_enabled:
+            return ERR_MOTOR_DISABLED
         pos = payload[0]
         reg.storage[0] = pos
         if pos == 0:
