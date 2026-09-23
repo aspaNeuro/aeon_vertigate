@@ -32,9 +32,11 @@ TBC
 
 1. **Enter the bootloader.** Hold BOOTSEL and press reset (or plug the board in while holding
    BOOTSEL). A drive named `RP2350` appears.
-2. **Erase the flash, first time only.** Copy
-   [flash_nuke.uf2](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2) to the drive. This
-   removes any old file system. The drive disappears and comes back after a few seconds.
+2. **Erase the file system, first time only.** Do not use `flash_nuke.uf2`. That file is an
+   RP2040 image and this board is an RP2350, so the boot loader ignores it. Clear the file
+   system from the REPL instead, as
+   [docs/firmware-image.md](docs/firmware-image.md) describes. A board straight from the
+   factory needs nothing here.
 3. **Flash MicroPython.** Copy
    [SEEED_XIAO_RP2350-20260824-v1.29.0.uf2](https://micropython.org/resources/firmware/SEEED_XIAO_RP2350-20260824-v1.29.0.uf2)
    to the drive (newer releases: [micropython.org/download/SEEED_XIAO_RP2350](https://micropython.org/download/SEEED_XIAO_RP2350/)).
@@ -63,6 +65,10 @@ TBC
 
 7. **Check the ports.** After the reset the board shows **two** COM ports. The first is the
    MicroPython REPL. The second is the Harp interface. Use the second one in Bonsai.
+
+These steps put the Python files on the board file system, which is what you want while you
+work on the firmware. For a release there is one `.uf2` that holds MicroPython, the firmware
+and both libraries. See [docs/firmware-image.md](docs/firmware-image.md).
 
 ### Updating the firmware
 
