@@ -50,14 +50,14 @@ TBC
 5. **Install the libraries.** Replace `COM3` with your port:
 
    ```bash
-   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel
-   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp
+   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel@846451ee2db58569f1aae4c8527ef053a9df291a
+   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp@v2.1.0
    ```
 
 6. **Copy the firmware.** From the repository root, run:
 
    ```bash
-   uv run mpremote connect COM3 cp -r firmware/. :
+   uv run mpremote connect COM3 cp -r firmware/vertigate/. :
    uv run mpremote connect COM3 reset
    ```
 
@@ -70,7 +70,7 @@ The firmware keeps the REPL on its own port, so `mpremote` works while the devic
 `resume` so that `mpremote` does not soft-reset the board:
 
 ```bash
-uv run mpremote connect COM3 resume cp -r firmware/. :
+uv run mpremote connect COM3 resume cp -r firmware/vertigate/. :
 uv run mpremote connect COM3 resume reset
 ```
 

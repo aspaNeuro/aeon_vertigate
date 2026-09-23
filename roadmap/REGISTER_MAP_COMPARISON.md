@@ -1,8 +1,8 @@
 # VertiGate register map: implemented vs proposed
 
 > Companion to [`HARP_MIGRATION_PLAN.md`](HARP_MIGRATION_PLAN.md) §2.2. Analysis only, no code
-> changes. Sources: [`firmware/register.py`](../firmware/register.py),
-> [`firmware/gate.py`](../firmware/gate.py), [`device.yml`](../device.yml).
+> changes. Sources: [`firmware/vertigate/register.py`](../firmware/vertigate/register.py),
+> [`firmware/vertigate/gate.py`](../firmware/vertigate/gate.py), [`device.yml`](../device.yml).
 
 ## 1. Side by side
 
@@ -52,7 +52,7 @@ Most items in the table are cosmetic. These five are not.
 
 ### 2.1 `Stop` becomes reachable
 
-`Gate.stop()` already exists in [`gate.py`](../firmware/gate.py). It cancels the motion task and
+`Gate.stop()` already exists in [`gate.py`](../firmware/vertigate/gate.py). It cancels the motion task and
 holds position. **No register calls it.** Today a moving gate can only be redirected, not stopped.
 `Control.Stop` exposes code that is already written and tested.
 
@@ -213,7 +213,7 @@ unused bits in `Control` and one unused address.
 
 What each register in the proposed map is for, what it carries, and what it costs to implement.
 "Exists" means the register is already in [`device.yml`](../device.yml) and
-[`register.py`](../firmware/register.py) today.
+[`register.py`](../firmware/vertigate/register.py) today.
 
 ### `Control`: address 32, U8, `Write`. Firmware `WRITE_ONLY`. **New**
 
