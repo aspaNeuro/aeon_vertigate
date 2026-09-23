@@ -85,12 +85,12 @@ jobs:
         run: make -C micropython/ports/rp2 BOARD_DIR=${{github.workspace}}/firmware/boards/${{matrix.board}} submodules
 
       - name: Build mpy-cross
-        run: make -C micropython/mpy-cross -j$(nproc)
+        run: make -C micropython/mpy-cross -j"$(nproc)"
 
       # ----------------------------------------------------------------------- Build firmware
       - name: Build firmware
         id: build
-        run: make -C micropython/ports/rp2 BOARD_DIR=${{github.workspace}}/firmware/boards/${{matrix.board}} -j$(nproc)
+        run: make -C micropython/ports/rp2 BOARD_DIR=${{github.workspace}}/firmware/boards/${{matrix.board}} -j"$(nproc)"
 
       # The versions in the file name are the ones frozen into the image. On a release, configure-build has
       # already checked that they agree with the tag. Non-release builds carry a -preview suffix with the run number.
