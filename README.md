@@ -170,6 +170,7 @@ Generate first, then pack:
 ```bash
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+uv run tools/firmware_version.py
 dotnet pack software/Aeon.VertiGate.sln -c Release
 ```
 
@@ -180,14 +181,16 @@ one. If Bonsai still shows the old operators, close it, delete
 
 ## 🧩 Interfaces
 
-`device.yml` describes every register. Two interfaces are generated from it:
+`device.yml` describes every register. Two interfaces and one firmware module are generated from it:
 
 - **Bonsai**, in `software/Aeon.VertiGate/`. It gives one typed operator per
   register, instead of raw addresses and payload types.
 - **Python**, in `src/aeon/vertigate/device.py`. It works with
   [harp-python](https://github.com/harp-tech/python).
+- **Firmware identity**, in `firmware/vertigate/_version.py`. It holds the WhoAmI and the
+  firmware and hardware versions the device reports on connect.
 
-Both are committed. You only need to generate them again after you change
+All three are committed, and CI fails if any of them is out of date. You only need to generate them again after you change
 `device.yml`.
 
 ### Generating them again
@@ -204,6 +207,7 @@ Then, from the repository root:
 ```bash
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+uv run tools/firmware_version.py
 ```
 
 Commit the result. Do not edit the generated files by hand. They say so at the
