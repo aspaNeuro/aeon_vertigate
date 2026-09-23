@@ -11,13 +11,8 @@ from task import setup_user_task
 from microharp import HarpDevice, CdcTransport
 from microharp.registers import R_HARP_VERSION_H, R_HARP_VERSION_L
 
-# Keep these equal to device.yml. Bonsai reads them on connect.
-WHO_AM_I = 3002
-FW_VERSION = (0, 1)
-HW_VERSION = (0, 1)
-# Version of the Harp device specification this firmware follows. Bonsai
-# shows it as CoreVersion. 1.13 is the current release of harp-tech/protocol.
-HARP_VERSION = (1, 13)
+# Generated from device.yml. Bonsai reads these on connect.
+from _version import WHO_AM_I, FW_VERSION, HW_VERSION, HARP_VERSION
 
 
 def main():

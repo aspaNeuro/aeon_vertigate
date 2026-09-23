@@ -23,6 +23,24 @@ TBC
 
 ### Firmware installation
 
+Each [release](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/releases) attaches one firmware image, `VertiGate-fw<x.y>-harp1.13-hw<x.y>-ass0.uf2`. It is a MicroPython build for the NeuroPico with the VertiGate application and its libraries frozen inside. Flashing it is the whole installation.
+
+1. **Enter the bootloader.** Hold BOOTSEL and press reset (or plug the board in while holding
+   BOOTSEL). A drive named `RP2350` appears.
+2. **Erase the file system, first time only.** Do not use `flash_nuke.uf2`. That file is an
+   RP2040 image, and this board is an RP2350, so the boot loader ignores it. Clear the file
+   system from the REPL instead, as [docs/firmware-image.md](docs/firmware-image.md)
+   describes. A board straight from the factory needs nothing here.
+3. **Flash the image.** Copy the `.uf2` from the release to the drive. The board reboots.
+4. **Check the ports.** The board shows **two** COM ports. The first is the MicroPython REPL.
+   The second is the Harp interface. Use the second one in Bonsai.
+
+To update, flash the new `.uf2` the same way. The settings file and the error log on the file system survive, because the image only replaces the firmware region.
+
+### Developing the firmware
+
+The image runs its frozen `main.py` even when a `main.py` is on the file system, so it cannot be used to try out changes. For development, run the Python files from the file system of a stock MicroPython build.
+
 > **Which MicroPython build.** The NeuroPico uses an RP2354A with **2 MB** of flash inside the chip.
 > Do not use the `RPI_PICO2` build. It assumes 4 MB and its file system wraps around onto the
 > firmware. The board works for a while, then freezes or corrupts its files. Use the
@@ -30,18 +48,11 @@ TBC
 > no board-specific code that affects VertiGate. Older versions of that build have the same 4 MB
 > problem.
 
-1. **Enter the bootloader.** Hold BOOTSEL and press reset (or plug the board in while holding
-   BOOTSEL). A drive named `RP2350` appears.
-2. **Erase the file system, first time only.** Do not use `flash_nuke.uf2`. That file is an
-   RP2040 image and this board is an RP2350, so the boot loader ignores it. Clear the file
-   system from the REPL instead, as
-   [docs/firmware-image.md](docs/firmware-image.md) describes. A board straight from the
-   factory needs nothing here.
-3. **Flash MicroPython.** Copy
+1. **Flash MicroPython.** Enter the bootloader and erase the flash as above, then copy
    [SEEED_XIAO_RP2350-20260824-v1.29.0.uf2](https://micropython.org/resources/firmware/SEEED_XIAO_RP2350-20260824-v1.29.0.uf2)
    to the drive (newer releases: [micropython.org/download/SEEED_XIAO_RP2350](https://micropython.org/download/SEEED_XIAO_RP2350/)).
    The board reboots and a COM port appears.
-4. **Install the host tools.** Install [uv](https://docs.astral.sh/uv/), then run from the repository root:
+2. **Install the host tools.** Install [uv](https://docs.astral.sh/uv/), then run from the repository root:
 
    ```bash
    uv sync
@@ -49,28 +60,20 @@ TBC
 
    This creates a `.venv` with `mpremote` and `pyserial`. Add `--all-extras` to also install the
    packages the generated Python interface needs.
-5. **Install the libraries.** Replace `COM3` with your port:
+3. **Install the libraries.** Replace `COM3` with your port. The versions are the ones pinned as
+   submodules under `firmware/lib/`, which is what the release image is built from:
 
    ```bash
-   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel
-   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp
+   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel@846451ee2db58569f1aae4c8527ef053a9df291a
+   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp@v2.1.0
    ```
 
-6. **Copy the firmware.** From the repository root, run:
+4. **Copy the firmware.** From the repository root, run:
 
    ```bash
-   uv run mpremote connect COM3 cp -r firmware/. :
+   uv run mpremote connect COM3 cp -r firmware/vertigate/. :
    uv run mpremote connect COM3 reset
    ```
-
-7. **Check the ports.** After the reset the board shows **two** COM ports. The first is the
-   MicroPython REPL. The second is the Harp interface. Use the second one in Bonsai.
-
-These steps put the Python files on the board file system, which is what you want while you
-work on the firmware. For a release there is one `.uf2` that holds MicroPython, the firmware
-and both libraries. See [docs/firmware-image.md](docs/firmware-image.md).
-
-### Updating the firmware
 
 The firmware keeps the REPL on its own port, so `mpremote` can reach the board while the
 device is plugged in. **`mpremote` stops the running firmware.** It enters the raw REPL,
@@ -78,7 +81,7 @@ which raises `KeyboardInterrupt` inside the device loop, and the Harp port disap
 the files, then reset:
 
 ```bash
-uv run mpremote connect COM3 resume cp -r firmware/. :
+uv run mpremote connect COM3 resume cp -r firmware/vertigate/. :
 uv run mpremote connect COM3 reset
 ```
 
@@ -182,6 +185,7 @@ Generate first, then pack:
 ```bash
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+uv run tools/firmware_version.py
 dotnet pack software/Aeon.VertiGate.sln -c Release
 ```
 
@@ -199,14 +203,16 @@ Start Bonsai again. It installs the new package from
 
 ## 🧩 Interfaces
 
-`device.yml` describes every register. Two interfaces are generated from it:
+`device.yml` describes every register. Two interfaces and one firmware module are generated from it:
 
 - **Bonsai**, in `software/Aeon.VertiGate/`. It gives one typed operator per
   register, instead of raw addresses and payload types.
 - **Python**, in `src/aeon/vertigate/device.py`. It works with
   [harp-python](https://github.com/harp-tech/python).
+- **Firmware identity**, in `firmware/vertigate/_version.py`. It holds the WhoAmI and the
+  firmware and hardware versions the device reports on connect.
 
-Both are committed. You only need to generate them again after you change
+All three are committed, and CI fails if any of them is out of date. You only need to generate them again after you change
 `device.yml`.
 
 ### Generating them again
@@ -223,10 +229,32 @@ Then, from the repository root:
 ```bash
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+uv run tools/firmware_version.py
 ```
 
 Commit the result. Do not edit the generated files by hand. They say so at the
 top, and the next run would overwrite the change.
+
+### Building the firmware image
+
+The release image is a MicroPython build with the application frozen in. The inputs are in `firmware/`:
+
+- `vertigate/`: the application.
+- `lib/`: `micropython-microharp` and `micropython-dynamixel` as git submodules, pinned to the versions the application is tested with. Clone with `git clone --recursive`, or run `git submodule update --init` in an existing clone.
+- `boards/NEUROPICO/`: the MicroPython board definition. It reuses the Seeed XIAO RP2350 board support, pins the flash size to 2 MB and the file system to 1 MiB, and names the modules to freeze in `manifest.py`.
+
+CI builds the image on every push and attaches it to releases. To build it locally on Linux, with `gcc-arm-none-eabi` 13, `cmake` and `picotool` installed (GCC 15 rejects a warning in the bundled mbedtls, so use the GCC 13 toolchain CI uses):
+
+```bash
+git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git
+make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/NEUROPICO submodules
+make -C micropython/mpy-cross
+make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/NEUROPICO
+```
+
+The image is `micropython/ports/rp2/build-NEUROPICO/firmware.uf2`. Use the same MicroPython version as CI, set in the workflow file.
+
+The release tag must match `firmwareVersion` in `device.yml` in its major and minor parts. CI checks this and stops the release if they differ.
 
 ### Building the Bonsai package
 
@@ -326,6 +354,8 @@ leave the motor off. Only `EnableMotor` clears the state.
 > The gate turns off motor torque when it reaches the fully-down position. This protects the motor.
 
 ## 💻 Software Requirements
+
+Running a released firmware image needs no software beyond Bonsai. The rest is for development:
 
 - **MicroPython** `SEEED_XIAO_RP2350` build, v1.29.0 or later: [micropython.org](https://micropython.org/download/SEEED_XIAO_RP2350/). See "Which MicroPython build" above.
 - **uv**: [docs.astral.sh/uv](https://docs.astral.sh/uv/) (creates the `.venv` with `mpremote` and `pyserial`)

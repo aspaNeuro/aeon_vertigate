@@ -1,0 +1,6 @@
+[submodule "firmware/lib/micropython-microharp"]
+	path = firmware/lib/micropython-microharp
+	url = https://github.com/SainsburyWellcomeCentre/micropython-microharp.git
+[submodule "firmware/lib/micropython-dynamixel"]
+	path = firmware/lib/micropython-dynamixel
+	url = https://github.com/SainsburyWellcomeCentre/micropython-dynamixel.git

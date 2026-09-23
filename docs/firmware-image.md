@@ -58,14 +58,29 @@ MicroPython can do that itself.
 
 ## Why the file system must be cleared first
 
-MicroPython imports from the file system **before** it looks at frozen modules.
-It also runs a file system `main.py` in place of a frozen one.
+The image and the loose files do not mix. Half of each is used:
 
-So a board that already has the loose files keeps running them after you flash
-the image. The device works, and none of the frozen code runs. Nothing warns
-you.
+| At boot | Which wins |
+| --- | --- |
+| `main.py` | the **frozen** one, even when a `main.py` is on the file system |
+| `import gate`, `import task`, and the rest | the **file system** one |
 
-Clear the file system before you flash:
+MicroPython starts the frozen `main.py`, but `import` follows `sys.path`, where
+the file system comes before `.frozen`. So an old frozen `main.py` runs against
+new modules from the file system, or the reverse.
+
+This is not a clean fall back. It is a mix of two versions, and it fails in ways
+that point nowhere useful. We hit it:
+
+```
+TypeError: function takes 4 positional arguments but 3 were given
+```
+
+The frozen `main.py` called `setup_user_task` with three arguments. The file
+system `task.py` wanted four. The board crashed at boot and the Harp port never
+appeared.
+
+So clear the file system before you flash:
 
 ```bash
 uv run mpremote connect COM3 resume exec "
@@ -77,8 +92,7 @@ print(sorted(os.listdir('/')))
 "
 ```
 
-This removes the firmware files, `lib/`, `settings.json` and `error.log`. The
-board then has bare MicroPython and no VertiGate firmware until you flash.
+This removes the firmware files, `lib/`, `settings.json` and `error.log`.
 
 ## Flashing
 
@@ -120,13 +134,16 @@ with open_device(port='COM4', raise_on_error=False) as dev:
 
 ## Going back to the development files
 
-The frozen image stays on the board. To work on the firmware again, copy the
-files over it. They shadow the frozen modules, which is what you want here:
+You cannot. Copying the files over the image gives the mix described above,
+and the board crashes at boot.
 
-```bash
-uv run mpremote connect COM3 resume cp -r firmware/. :
-uv run mpremote connect COM3 reset
-```
+To work on the firmware, flash a stock MicroPython build, then install the
+libraries and copy the files, as the
+[README](../README.md) describes under **Developing the firmware**. The stock
+image has no frozen application, so the file system is the only source.
+
+Flashing the stock build also clears the file system, so the libraries have to
+be installed again.
 
 ## What we measured
 
