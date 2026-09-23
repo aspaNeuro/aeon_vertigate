@@ -23,6 +23,23 @@ TBC
 
 ### Firmware installation
 
+Each [release](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/releases) attaches one firmware image, `VertiGate-fw<x.y>-harp1.13-hw<x.y>-ass0.uf2`. It is a MicroPython build for the NeuroPico with the VertiGate application and its libraries frozen inside. Flashing it is the whole installation.
+
+1. **Enter the bootloader.** Hold BOOTSEL and press reset (or plug the board in while holding
+   BOOTSEL). A drive named `RP2350` appears.
+2. **Erase the flash, first time only.** Copy
+   [flash_nuke.uf2](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2) to the drive. This
+   removes any old file system. The drive disappears and comes back after a few seconds.
+3. **Flash the image.** Copy the `.uf2` from the release to the drive. The board reboots.
+4. **Check the ports.** The board shows **two** COM ports. The first is the MicroPython REPL.
+   The second is the Harp interface. Use the second one in Bonsai.
+
+To update, flash the new `.uf2` the same way. The settings file and the error log on the file system survive, because the image only replaces the firmware region.
+
+### Developing the firmware
+
+The image runs its frozen `main.py` even when a `main.py` is on the file system, so it cannot be used to try out changes. For development, run the Python files from the file system of a stock MicroPython build.
+
 > **Which MicroPython build.** The NeuroPico uses an RP2354A with **2 MB** of flash inside the chip.
 > Do not use the `RPI_PICO2` build. It assumes 4 MB and its file system wraps around onto the
 > firmware. The board works for a while, then freezes or corrupts its files. Use the
@@ -30,16 +47,11 @@ TBC
 > no board-specific code that affects VertiGate. Older versions of that build have the same 4 MB
 > problem.
 
-1. **Enter the bootloader.** Hold BOOTSEL and press reset (or plug the board in while holding
-   BOOTSEL). A drive named `RP2350` appears.
-2. **Erase the flash, first time only.** Copy
-   [flash_nuke.uf2](https://datasheets.raspberrypi.com/soft/flash_nuke.uf2) to the drive. This
-   removes any old file system. The drive disappears and comes back after a few seconds.
-3. **Flash MicroPython.** Copy
+1. **Flash MicroPython.** Enter the bootloader and erase the flash as above, then copy
    [SEEED_XIAO_RP2350-20260824-v1.29.0.uf2](https://micropython.org/resources/firmware/SEEED_XIAO_RP2350-20260824-v1.29.0.uf2)
    to the drive (newer releases: [micropython.org/download/SEEED_XIAO_RP2350](https://micropython.org/download/SEEED_XIAO_RP2350/)).
    The board reboots and a COM port appears.
-4. **Install the host tools.** Install [uv](https://docs.astral.sh/uv/), then run from the repository root:
+2. **Install the host tools.** Install [uv](https://docs.astral.sh/uv/), then run from the repository root:
 
    ```bash
    uv sync
@@ -47,24 +59,20 @@ TBC
 
    This creates a `.venv` with `mpremote` and `pyserial`. Add `--all-extras` to also install the
    packages the generated Python interface needs.
-5. **Install the libraries.** Replace `COM3` with your port:
+3. **Install the libraries.** Replace `COM3` with your port. The versions are the ones pinned as
+   submodules under `firmware/lib/`, which is what the release image is built from:
 
    ```bash
    uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel@846451ee2db58569f1aae4c8527ef053a9df291a
    uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp@v2.1.0
    ```
 
-6. **Copy the firmware.** From the repository root, run:
+4. **Copy the firmware.** From the repository root, run:
 
    ```bash
    uv run mpremote connect COM3 cp -r firmware/vertigate/. :
    uv run mpremote connect COM3 reset
    ```
-
-7. **Check the ports.** After the reset the board shows **two** COM ports. The first is the
-   MicroPython REPL. The second is the Harp interface. Use the second one in Bonsai.
-
-### Updating the firmware
 
 The firmware keeps the REPL on its own port, so `mpremote` works while the device runs. Use
 `resume` so that `mpremote` does not soft-reset the board:
@@ -326,6 +334,8 @@ The gate homes itself at boot. If the servo does not answer, GateState reports `
 > The gate turns off motor torque when it reaches the fully-down position. This protects the motor.
 
 ## 💻 Software Requirements
+
+Running a released firmware image needs no software beyond Bonsai. The rest is for development:
 
 - **MicroPython** `SEEED_XIAO_RP2350` build, v1.29.0 or later: [micropython.org](https://micropython.org/download/SEEED_XIAO_RP2350/). See "Which MicroPython build" above.
 - **uv**: [docs.astral.sh/uv](https://docs.astral.sh/uv/) (creates the `.venv` with `mpremote` and `pyserial`)

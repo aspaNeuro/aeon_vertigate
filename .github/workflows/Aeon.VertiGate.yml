@@ -1,0 +1,277 @@
+# =======================================================================================================================================================================
+# Aeon.VertiGate CI/CD
+# =======================================================================================================================================================================
+# Index:
+# * Build firmware
+# * Build interface
+# * Publish packages to GitHub
+# * Publish packages to NuGet.org
+# =======================================================================================================================================================================
+# Note that this is a generic workflow meant for all Harp devices. Minor local modifications are fine, see https://github.com/bonsai-rx/prefect for more information.
+# Documentation is handled centrally, so this workflow has no DocFX jobs.
+# The firmware is MicroPython. The firmware job builds a MicroPython image with the application and its libraries frozen in, and attaches the UF2 to releases.
+# =======================================================================================================================================================================
+name: Aeon.VertiGate
+on:
+  push:
+    # This prevents tag pushes from triggering this workflow
+    branches: ['**']
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: false
+  ContinuousIntegrationBuild: true
+  MICROPYTHON_VERSION: v1.29.0
+jobs:
+  # =====================================================================================================================================================================
+  # Build firmware
+  #  ___      _ _    _    __ _
+  # | _ )_  _(_) |__| |  / _(_)_ _ _ ____ __ ____ _ _ _ ___
+  # | _ \ || | | / _` | |  _| | '_| '  \ V  V / _` | '_/ -_)
+  # |___/\_,_|_|_\__,_| |_| |_|_| |_|_|_\_/\_/\__,_|_| \___|
+  # =====================================================================================================================================================================
+  build-firmware:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - hardware-target: '0.1'
+            board: NEUROPICO
+    name: Build Firmware (hw${{matrix.hardware-target}})
+    runs-on: ubuntu-latest
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+
+      # ----------------------------------------------------------------------- Configure build
+      # Also checks that on a release the tag's major.minor matches firmwareVersion in device.yml.
+      - name: Configure build
+        id: configure-build
+        uses: harp-tech/configure-build@v2
+
+      # ----------------------------------------------------------------------- Regenerate
+      - name: Regenerate firmware version module
+        run: uv run tools/firmware_version.py
+
+      - name: Verify generated code is up-to-date
+        run: |
+          git add . --intent-to-add --ignore-removal
+          git diff --name-status --exit-code
+
+      # ----------------------------------------------------------------------- Set up MicroPython
+      - name: Checkout MicroPython
+        uses: actions/checkout@v7
+        with:
+          repository: micropython/micropython
+          ref: ${{env.MICROPYTHON_VERSION}}
+          path: micropython
+
+      - name: Set up the rp2 toolchain
+        working-directory: micropython
+        run: tools/ci.sh rp2_setup
+
+      - name: Fetch MicroPython submodules
+        run: make -C micropython/ports/rp2 BOARD_DIR=${{github.workspace}}/firmware/boards/${{matrix.board}} submodules
+
+      - name: Build mpy-cross
+        run: make -C micropython/mpy-cross -j$(nproc)
+
+      # ----------------------------------------------------------------------- Build firmware
+      - name: Build firmware
+        id: build
+        run: make -C micropython/ports/rp2 BOARD_DIR=${{github.workspace}}/firmware/boards/${{matrix.board}} -j$(nproc)
+
+      # The versions in the file name are the ones frozen into the image. On a release, configure-build has
+      # already checked that they agree with the tag. Non-release builds carry a -preview suffix with the run number.
+      - name: Name firmware image
+        run: |
+          eval "$(sed -n 's/^\(FW_VERSION\|HW_VERSION\|HARP_VERSION\) = (\([0-9]*\), \([0-9]*\))$/\1=\2.\3/p' firmware/vertigate/_version.py)"
+          PREVIEW=""
+          if [ "$CiFirmwarePreviewVersion" != "v" ]; then PREVIEW="-preview$CiFirmwarePreviewVersion"; fi
+          NAME="VertiGate-fw$FW_VERSION-harp$HARP_VERSION-hw$HW_VERSION-ass0$PREVIEW.uf2"
+          mkdir -p artifacts/firmware
+          cp micropython/ports/rp2/build-${{matrix.board}}/firmware.uf2 "artifacts/firmware/$NAME"
+          ls -l artifacts/firmware
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect firmware image
+        uses: actions/upload-artifact@v7
+        if: steps.build.outcome == 'success' && always()
+        with:
+          name: Firmware-hw${{matrix.hardware-target}}
+          if-no-files-found: error
+          path: artifacts/firmware/*.uf2
+
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} artifacts/firmware/*.uf2 --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
+
+  # =====================================================================================================================================================================
+  # Build interface
+  #  ___      _ _    _   _     _            __
+  # | _ )_  _(_) |__| | (_)_ _| |_ ___ _ _ / _|__ _ __ ___
+  # | _ \ || | | / _` | | | ' \  _/ -_) '_|  _/ _` / _/ -_)
+  # |___/\_,_|_|_\__,_| |_|_||_\__\___|_| |_| \__,_\__\___|
+  # =====================================================================================================================================================================
+  build-interface:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: Windows x64
+            os: windows-latest
+          - name: Linux x64
+            os: ubuntu-latest
+        configuration: ['debug', 'release']
+        include:
+          - platform:
+              os: windows-latest
+            configuration: release
+            collect-packages: true
+    name: Build Interface (${{matrix.platform.name}} ${{matrix.configuration}})
+    runs-on: ${{matrix.platform.os}}
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      - name: Set up .NET tools
+        run: dotnet tool restore
+
+      # ----------------------------------------------------------------------- Configure build
+      - name: Configure build
+        id: configure-build
+        uses: harp-tech/configure-build@v2
+
+      # ----------------------------------------------------------------------- Regenerate
+      - name: Regenerate interfaces
+        run: |
+          dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
+          dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+
+      - name: Verify generated code is up-to-date
+        run: |
+          git add . --intent-to-add --ignore-removal
+          git diff --name-status --exit-code
+
+      # ----------------------------------------------------------------------- Build interface package
+      - name: Restore
+        run: dotnet restore software
+
+      - name: Build
+        run: dotnet build software --no-restore --configuration ${{matrix.configuration}}
+
+      - name: Pack
+        id: pack
+        run: dotnet pack software --no-restore --no-build --configuration ${{matrix.configuration}}
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect NuGet packages
+        uses: actions/upload-artifact@v7
+        if: matrix.collect-packages && steps.pack.outcome == 'success' && always()
+        with:
+          name: Packages
+          if-no-files-found: error
+          path: artifacts/package/${{matrix.configuration}}/**
+
+  # =====================================================================================================================================================================
+  # Publish packages to GitHub
+  #  ___      _    _ _    _                    _                      _          ___ _ _   _  _      _
+  # | _ \_  _| |__| (_)__| |_    _ __  __ _ __| |____ _ __ _ ___ ___ | |_ ___   / __(_) |_| || |_  _| |__
+  # |  _/ || | '_ \ | (_-< ' \  | '_ \/ _` / _| / / _` / _` / -_|_-< |  _/ _ \ | (_ | |  _| __ | || | '_ \
+  # |_|  \_,_|_.__/_|_/__/_||_| | .__/\__,_\__|_\_\__,_\__, \___/__/  \__\___/  \___|_|\__|_||_|\_,_|_.__/
+  #                             |_|                    |___/
+  # =====================================================================================================================================================================
+  publish-github:
+    name: Publish packages to GitHub
+    runs-on: ubuntu-latest
+    needs: build-interface
+    permissions:
+      # Needed to attach files to releases
+      contents: write
+      # Needed to upload to GitHub Packages
+      packages: write
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+      # ----------------------------------------------------------------------- Set up .NET
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} artifacts/packages/* --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
+
+      # ----------------------------------------------------------------------- Push to GitHub Packages
+      - name: Push to GitHub Packages
+        run: dotnet nuget push "artifacts/packages/*.nupkg" --skip-duplicate --no-symbols --api-key ${{secrets.GITHUB_TOKEN}} --source https://nuget.pkg.github.com/${{github.repository_owner}}
+        env:
+          # This is a workaround for https://github.com/NuGet/Home/issues/9775
+          DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
+
+  # =====================================================================================================================================================================
+  # Publish packages to NuGet.org
+  #  ___      _    _ _    _                    _                      _         _  _       ___     _
+  # | _ \_  _| |__| (_)__| |_    _ __  __ _ __| |____ _ __ _ ___ ___ | |_ ___  | \| |_  _ / __|___| |_   ___ _ _ __ _
+  # |  _/ || | '_ \ | (_-< ' \  | '_ \/ _` / _| / / _` / _` / -_|_-< |  _/ _ \ | .` | || | (_ / -_)  _|_/ _ \ '_/ _` |
+  # |_|  \_,_|_.__/_|_/__/_||_| | .__/\__,_\__|_\_\__,_\__, \___/__/  \__\___/ |_|\_|\_,_|\___\___|\__(_)___/_| \__, |
+  #                             |_|                    |___/                                                    |___/
+  # =====================================================================================================================================================================
+  publish-packages-nuget-org:
+    name: Publish packages to NuGet.org
+    runs-on: ubuntu-latest
+    environment: public-release
+    # A release ships the package and the firmware image together, so both must have built.
+    needs: [build-firmware, build-interface]
+    if: github.event_name == 'release'
+    steps:
+      # ----------------------------------------------------------------------- Set up .NET
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Push to NuGet.org
+      - name: Push to NuGet.org
+        run: dotnet nuget push "artifacts/packages/*.nupkg" --api-key ${{secrets.NUGET_API_KEY}} --source ${{vars.NUGET_API_URL}}
+        env:
+          # This is a workaround for https://github.com/NuGet/Home/issues/9775
+          DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
