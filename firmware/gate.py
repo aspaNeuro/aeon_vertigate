@@ -48,6 +48,9 @@ class Gate(Dynamixel):
         self._isdown = False
         self._iscalibrating = False
         self._iserror = False
+        # Disable is a state, not a one-off command. While it is set, the
+        # motor stays off and the gate refuses to move. Only enable() clears it.
+        self._motor_disabled = False
         self.position_events = False
         self.telemetry_events = False
         self.isr = Event()
@@ -95,7 +98,8 @@ class Gate(Dynamixel):
         val &= TRQ_LIM
         self.torque_enabled = False
         self.current_limit = val
-        self.torque_enabled = True
+        # Do not switch the motor on if the host disabled it.
+        self.torque_enabled = not self._motor_disabled
 
     @property
     def speed(self):
@@ -106,7 +110,8 @@ class Gate(Dynamixel):
         vel &= VEL_LIM
         self.torque_enabled = False
         self.profile_velocity = vel + VEL_OFFSET
-        self.torque_enabled = True
+        # Do not switch the motor on if the host disabled it.
+        self.torque_enabled = not self._motor_disabled
 
     @property
     def offset(self):
@@ -121,11 +126,20 @@ class Gate(Dynamixel):
     def max_pos(self):
         return self.home_pos + LENGTH + self._offset
 
+    @property
+    def motor_enabled(self) -> bool:
+        return not self._motor_disabled
+
     def enable(self):
+        self._motor_disabled = False
         self.torque_enabled = True
+        self.isr.set()
 
     def disable(self):
+        self._motor_disabled = True
+        self.stop()
         self.torque_enabled = False
+        self.isr.set()
 
     def lower_down(self):
         if self.status != DOWN:
