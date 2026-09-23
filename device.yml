@@ -59,8 +59,9 @@ registers:
     description: >-
       Torque limit applied to the gate motor, as a servo current limit. Values
       are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this
-      register switches the motor torque off and on, so the gate drops for a
-      moment if it is holding a position.
+      register switches the motor off and on, so the gate drops for a moment if
+      it is holding a position. It leaves the motor off if MotorState is
+      Disabled.
   CalibrationOffset:
     address: 37
     access: Write
@@ -72,6 +73,12 @@ registers:
     description: >-
       Offset applied to the fully-raised position, to trim the end stop without
       moving hardware. One count is one encoder count, 25 µm.
+  MotorState:
+    address: 38
+    access: Event
+    type: U8
+    maskType: MotorStatus
+    description: Reports whether the motor holds the gate. DisableMotor and EnableMotor set it.
 bitMasks:
   ControlFlags:
     description: Commands accepted by the Control register.
@@ -85,6 +92,11 @@ bitMasks:
       EnableTelemetryEvent: {value: 0x40, description: Start sending ServoTelemetry events.}
       DisableTelemetryEvent: {value: 0x80, description: Stop sending ServoTelemetry events.}
 groupMasks:
+  MotorStatus:
+    description: Enumerates the states of the gate motor.
+    values:
+      Disabled: {value: 0, description: The motor is off. The gate refuses to move until the motor is enabled.}
+      Enabled: {value: 1, description: The motor is on and holds the gate.}
   GateStatus:
     description: Enumerates the possible states of the gate.
     values:
