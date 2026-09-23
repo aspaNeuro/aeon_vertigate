@@ -66,13 +66,19 @@ TBC
 
 ### Updating the firmware
 
-The firmware keeps the REPL on its own port, so `mpremote` works while the device runs. Use
-`resume` so that `mpremote` does not soft-reset the board:
+The firmware keeps the REPL on its own port, so `mpremote` can reach the board while the
+device is plugged in. **`mpremote` stops the running firmware.** It enters the raw REPL,
+which raises `KeyboardInterrupt` inside the device loop, and the Harp port disappears. Copy
+the files, then reset:
 
 ```bash
 uv run mpremote connect COM3 resume cp -r firmware/. :
-uv run mpremote connect COM3 resume reset
+uv run mpremote connect COM3 reset
 ```
+
+The Harp port comes back about 10 seconds after the reset. If it does not come back at all,
+unplug the board and plug it in again. The USB stack can stay down after several soft
+resets in a row.
 
 If the device does not start, read the log it writes on the board:
 
@@ -174,9 +180,16 @@ dotnet pack software/Aeon.VertiGate.sln -c Release
 ```
 
 Every local build has the same version, `42.42.42-dev0`. Bonsai keeps a copy of
-each package version it installs. So it may use the old copy and ignore the new
-one. If Bonsai still shows the old operators, close it, delete
-`.bonsai/Packages/Aeon.VertiGate.42.42.42-dev0/`, and start it again.
+each version it installs, and it does not read a version it already has. So
+Bonsai keeps the old operators until you remove its copy. Close Bonsai, then
+run this from the repository root:
+
+```bash
+rm -rf .bonsai/Packages/Aeon.VertiGate.42.42.42-dev0
+```
+
+Start Bonsai again. It installs the new package from
+`artifacts/package/release`.
 
 ## 🧩 Interfaces
 
@@ -242,7 +255,7 @@ port:
 dotnet harp.toolkit verify --port COM4 --metadata device.yml --report artifacts/verify.html
 ```
 
-It runs 51 checks and writes an HTML report. It exits with 1 if any check fails,
+It runs 52 checks and writes an HTML report. It exits with 1 if any check fails,
 so it can also run in CI.
 
 Five checks do not pass today. All five are known:
@@ -274,14 +287,15 @@ whether `device.yml` still produces a valid interface.
 | `0x23`  | Speed     | R/W       | Profile velocity. 0–255, default 255. Unit: 0.38 mm/s                          |
 | `0x24`  | Torque    | R/W       | Current limit. 0–127, default 35. Unit: 0.36 kgf·mm                            |
 | `0x25`  | CalibrationOffset | R/W | Offset for the fully-up position. −128 to +127, default 0. Unit: 25 μm       |
+| `0x26`  | MotorState | R + Event | `0x00` Disabled, `0x01` Enabled                                               |
 
 Writing a bit of **Control** runs one command. A write with both bits of a pair set (for example
 `EnableMotor` and `DisableMotor`) is rejected with an error reply.
 
 | Bit    | Name                    | Effect                                                    |
 | ------ | ----------------------- | --------------------------------------------------------- |
-| `0x01` | EnableMotor             | Turn the motor torque on. The gate holds its position.    |
-| `0x02` | DisableMotor            | Turn the motor torque off. The gate can be moved by hand. |
+| `0x01` | EnableMotor             | Turn the motor on. The gate holds its position.           |
+| `0x02` | DisableMotor            | Turn the motor off and stop any movement. The gate refuses to move until you enable the motor again. |
 | `0x04` | Stop                    | Stop the current movement and hold the position.          |
 | `0x08` | Calibrate               | Move the gate to the lower end stop and record it as home. |
 | `0x10` | EnablePositionEvent     | Reserved for the Position register.                       |
@@ -291,6 +305,11 @@ Writing a bit of **Control** runs one command. A write with both bits of a pair 
 
 The gate homes itself at boot. If the servo does not answer, GateState reports `Error`. Write
 `Calibrate` to try again after fixing the connection.
+
+**DisableMotor is a state, not a one-off command.** While **MotorState** (`0x26`) reads
+`Disabled`, a write to **TargetPosition** or a `Calibrate` command is refused with an error
+reply, and the gate does not move. Writes to **Speed** and **Torque** are accepted, and they
+leave the motor off. Only `EnableMotor` clears the state.
 
 ### Calibration guidelines
 
