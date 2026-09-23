@@ -106,6 +106,46 @@ Read the **GateState** register (`0x22`), or subscribe to its event, to follow t
 
 A Bonsai workflow is provided in `docs/workflows/GateControl.bonsai`.
 
+### The pinned Bonsai environment
+
+`.bonsai/` pins the Bonsai version and the packages, so everyone runs the
+example workflow on the same environment. It holds Bonsai 2.9.1, `Bonsai.Harp`,
+`Bonsai.Harp.Design`, which is the one that shows the Device Setup dialog, and
+`Bonsai.Gui`, which the panel is built with. Bonsai installs itself into that
+folder on first use, and the downloaded files are ignored by git.
+
+`Aeon.VertiGate` is in that list too, so the workflow opens with the typed
+operators already loaded. It is pinned at `42.42.42-dev0`, the version every
+local build produces, and `.bonsai/NuGet.config` points at
+`artifacts/package/release` so Bonsai can find it.
+
+**Build the package before you start Bonsai for the first time**, or it will
+not find `Aeon.VertiGate`:
+
+```bash
+dotnet pack software/Aeon.VertiGate.sln -c Release
+```
+
+#### If you change `device.yml`
+
+The build does not generate the interfaces. It compiles the `.Generated.cs`
+files that are on disk. But it does copy the new `device.yml` into the package.
+So a package built without the generate step holds a specification that does
+not match its own operators. Nothing warns you.
+
+Generate first, then pack:
+
+```bash
+dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
+dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+dotnet pack software/Aeon.VertiGate.sln -c Release
+```
+
+Every local build has the same version, `42.42.42-dev0`. Bonsai keeps a copy of
+each package version it installs. So it may use the old copy and ignore the new
+one. If Bonsai still shows the old operators, close it, delete
+`.bonsai/Packages/Aeon.VertiGate.42.42.42-dev0/`, and start it again.
+
 ## 🧩 Interfaces
 
 `device.yml` describes every register. Two interfaces are generated from it:
