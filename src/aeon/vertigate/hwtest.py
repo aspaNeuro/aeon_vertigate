@@ -1,19 +1,29 @@
-"""Hardware test for the VertiGate Control register.
+"""Hardware test for the VertiGate registers.
+
+The test drives the board with the Harp client from harp-serial and the
+interface generated from device.yml. Every address, command bit, state name and
+default value comes from the specification, so the test cannot drift away from
+it. It needs the harp extra:
+
+    uv sync --all-extras
 
 Run from the repository root, with the Harp port of the board:
 
     uv run vertigate-test --port COM4
 
 What it does, in order:
-    1. Reads the registers Bonsai reads on connect (WhoAmI, versions, name)
-       and prints them the way the Bonsai console does. Then reads Status.
-    2. Sends a bad Control write (Enable + Disable) and expects an error reply.
+    1. Reads the registers Bonsai reads on connect (WhoAmI, versions, name) and
+       prints them the way the Bonsai console does. WhoAmI and the device name
+       must match device.yml. Then reads GateState.
+    2. Sends a bad Control write (EnableMotor + DisableMotor) and expects an
+       error reply.
     3. Raises the gate, sends Stop after 0.5 s, and expects the gate to stop.
     4. Sends Calibrate and waits for GateState to go Calibrating, then Down.
-    5. Checks the non-volatile settings. A written Speed, Torque or device
-       name must survive a reboot, and RST_DEF must bring the defaults back.
+    5. Checks every register that device.yml marks non-volatile. A written value
+       and a written device name must survive a reboot, and RestoreDefault must
+       bring the values in device.yml back.
 
-Every GateState event seen on the way is printed.
+Every event the device sends is printed as it arrives.
 
 Section 5 reboots the board several times, so it takes about a minute. Skip it
 with --no-reboot.
@@ -22,170 +32,76 @@ Stop early with Ctrl-C. The script leaves the device in ACTIVE mode.
 """
 
 import argparse
-import struct
 import sys
 import time
+from pathlib import Path
 
-import serial
+from harp.device.client import DeviceError, TransportError
+from harp.device.core import (
+    AssemblyVersion,
+    CoreVersionHigh,
+    CoreVersionLow,
+    DeviceName,
+    FirmwareVersionHigh,
+    FirmwareVersionLow,
+    HardwareVersionHigh,
+    HardwareVersionLow,
+    OperationControl,
+    OperationControlPayload,
+    OperationMode,
+    ResetDevice,
+    ResetFlags,
+    SerialNumber,
+    WhoAmI,
+)
+from harp.device.schema import parse_device_schema
+from harp.protocol import HarpParseError
+from harp.serial import open_device
 
-MSG_READ, MSG_WRITE, MSG_EVENT = 1, 2, 3
-MSG_ERROR = 0x08
-PT_U8, PT_U16 = 1, 2
-PT_TIMESTAMP = 0x10
+from aeon.vertigate import device as vertigate
+from aeon.vertigate.device import (
+    Control,
+    ControlFlags,
+    GateState,
+    GateStatus,
+    TargetPosition,
+)
 
-R_WHO_AM_I = 0
-R_HW_VERSION_H, R_HW_VERSION_L = 1, 2
-R_ASSEMBLY_VERSION = 3
-R_CORE_VERSION_H, R_CORE_VERSION_L = 4, 5
-R_FW_VERSION_H, R_FW_VERSION_L = 6, 7
-R_RESET_DEV = 11
-R_OP_CTRL = 10
-R_DEVICE_NAME = 12
-R_SERIAL_NUMBER = 13
-OP_ACTIVE = 0x01
-
-ADDR_CONTROL = 32
-ADDR_TARGET_POSITION = 33
-ADDR_GATE_STATE = 34
-ADDR_SPEED = 35
-ADDR_TORQUE = 36
-ADDR_CALIBRATION_OFFSET = 37
-
-# R_RESET_DEV bits.
-RST_DEF = 0x01
-RST_EE = 0x02
-SAVE = 0x04
-BOOT_DEF = 0x40
-BOOT_EE = 0x80
-
-# device.yml defaultValue for the registers marked volatile: false.
-SPEED_DEFAULT = 255
-TORQUE_DEFAULT = 35
+# device.yml, read for what the generated interface leaves out: which registers
+# are non-volatile, and their default, minimum and maximum.
+METADATA = Path(__file__).resolve().parents[3] / "device.yml"
 
 REBOOT_SECONDS = 9
-DEVICE_NAME_LEN = 25
-
-CTRL_ENABLE_MOTOR = 0x01
-CTRL_DISABLE_MOTOR = 0x02
-CTRL_STOP = 0x04
-CTRL_CALIBRATE = 0x08
-
-STATUS_NAMES = {0: "Idle", 1: "Up", 2: "Down", 3: "Moving", 4: "Calibrating", 0xFF: "Error"}
-
 CAL_TIMEOUT_S = 12.0
 
-
-def encode(msg_type, address, payload_type, payload=b""):
-    body = bytes([address, 255, payload_type]) + payload
-    frame = bytes([msg_type, len(body) + 1]) + body
-    return frame + bytes([sum(frame) & 0xFF])
-
-
-def read_frame(ser, deadline):
-    """Return one decoded frame, or None on timeout."""
-    while time.perf_counter() < deadline:
-        head = ser.read(2)
-        if len(head) < 2:
-            continue
-        msg_type, length = head
-        rest = ser.read(length)
-        if len(rest) < length:
-            return None
-        frame = head + rest
-        if sum(frame[:-1]) & 0xFF != frame[-1]:
-            print("  ! bad checksum, frame dropped")
-            continue
-        address, port, ptype = rest[0], rest[1], rest[2]
-        offset = 3
-        if ptype & PT_TIMESTAMP:
-            offset += 6
-        payload = rest[offset:-1]
-        return {
-            "type": msg_type & ~MSG_ERROR,
-            "error": bool(msg_type & MSG_ERROR),
-            "address": address,
-            "payload": payload,
-        }
-    return None
+# Failures the test reports as a FAIL instead of stopping on. DeviceError is
+# only raised if the device is opened with raise_on_error, which this test does
+# not, but catching it keeps the helpers safe either way.
+DEVICE_FAILURES = (DeviceError, TransportError, TimeoutError, OSError)
 
 
-def request(ser, msg_type, address, payload_type, payload=b"", timeout=1.0):
-    """Send one request and return the matching reply. Events seen on the
-    way are printed and skipped."""
-    ser.write(encode(msg_type, address, payload_type, payload))
-    deadline = time.perf_counter() + timeout
-    while True:
-        f = read_frame(ser, deadline)
-        if f is None:
-            return None
-        if f["type"] == MSG_EVENT:
-            print_event(f)
-            continue
-        if f["address"] == address:
-            return f
+class _ErrorReply:
+    """Stand-in for an error reply the client cannot decode.
+
+    The firmware answers a rejected write with the error flag set and an empty
+    payload. Device.write decodes every reply against its register, even one
+    that carries the error flag, so decoding an error reply raises instead of
+    returning it. Until either side changes, a parse failure on a reply means
+    the device rejected the write.
+    """
+
+    has_error = True
 
 
-def print_event(f):
-    if f["address"] == ADDR_GATE_STATE and f["payload"]:
-        v = f["payload"][0]
-        print(f"  event  Status = {v} ({STATUS_NAMES.get(v, '?')})")
-    else:
-        print(f"  event  address {f['address']} payload {f['payload'].hex()}")
+ERROR_REPLY = _ErrorReply()
 
 
-def drain_events(ser, seconds):
-    deadline = time.perf_counter() + seconds
-    while True:
-        f = read_frame(ser, deadline)
-        if f is None:
-            return
-        if f["type"] == MSG_EVENT:
-            print_event(f)
-
-
-def read_u8(ser, address):
-    f = request(ser, MSG_READ, address, PT_U8)
-    return None if f is None or not f["payload"] else f["payload"][0]
-
-
-def read_u16(ser, address):
-    f = request(ser, MSG_READ, address, PT_U16)
-    return None if f is None or len(f["payload"]) < 2 else struct.unpack("<H", f["payload"][:2])[0]
-
-
-def read_str(ser, address):
-    f = request(ser, MSG_READ, address, PT_U8)
-    return None if f is None else f["payload"].split(b"\x00", 1)[0].decode("ascii", "replace")
-
-
-def print_identity(ser):
-    """Read what Bonsai reads when the Device node connects, and print it
-    the way the Bonsai console does. Returns the WhoAmI value."""
-    who = read_u16(ser, R_WHO_AM_I)
-    hw = (read_u8(ser, R_HW_VERSION_H), read_u8(ser, R_HW_VERSION_L))
-    fw = (read_u8(ser, R_FW_VERSION_H), read_u8(ser, R_FW_VERSION_L))
-    core = (read_u8(ser, R_CORE_VERSION_H), read_u8(ser, R_CORE_VERSION_L))
-    asm = read_u8(ser, R_ASSEMBLY_VERSION)
-    name = read_str(ser, R_DEVICE_NAME)
-    serial_no = read_u16(ser, R_SERIAL_NUMBER)
-    print(f"  Bonsai console line:  Serial Harp device. WhoAmI: {who} Hw: {hw[0]}.{hw[1]} Fw: {fw[0]}.{fw[1]} DeviceName: {name}")
-    print(f"  Device Setup dialog:  DeviceName={name} WhoAmI={who} HardwareVersion={hw[0]}.{hw[1]}")
-    print(f"                        FirmwareVersion={fw[0]}.{fw[1]} CoreVersion={core[0]}.{core[1]} AssemblyVersion={asm} SerialNumber={serial_no}")
-    return who
-
-
-def write_u8(ser, address, value):
-    return request(ser, MSG_WRITE, address, PT_U8, bytes([value]))
-
-
-def wait_status(ser, wanted, timeout):
-    deadline = time.perf_counter() + timeout
-    while time.perf_counter() < deadline:
-        v = read_u8(ser, ADDR_GATE_STATE)
-        if v == wanted:
-            return True
-        time.sleep(0.1)
-    return False
+def status_name(value):
+    """Name of a GateState value, from the interface."""
+    try:
+        return GateStatus(value).name.title()
+    except ValueError:
+        return "?"
 
 
 def check(ok, text):
@@ -193,149 +109,246 @@ def check(ok, text):
     return ok
 
 
-def open_port(port, settle=0.2):
-    ser = serial.Serial(port, baudrate=1_000_000, timeout=0.005)
-    ser.dtr = True
-    time.sleep(settle)
-    ser.reset_input_buffer()
-    return ser
+def on_gate_state(msg):
+    print(f"  event  GateState = {int(msg.payload)} ({status_name(msg.payload)})")
 
 
-def reboot(ser, port, command):
-    """Send a reset command, wait for the device to come back, and reopen.
+def on_other_event(msg):
+    if msg.address != GateState.address:
+        print(f"  event  address {msg.address} payload {msg.payload_bytes.hex()}")
 
-    The device drops the USB port while it reboots, so the port has to be
-    closed and opened again.
+
+def connect(port):
+    """Open the device, start printing events and put it in ACTIVE mode.
+
+    Opened without the device module, so a wrong WhoAmI is reported as a failed
+    check instead of raising. Passing vertigate to open_device would make the
+    client check the identity itself.
     """
-    # Do not wait for the reply. The device answers and then reboots, so the
-    # port can disappear while the reply is still being read.
+    dev = open_device(port=port, raise_on_error=False)
+    dev.subscribe(GateState, on_gate_state)
+    dev.subscribe_all(on_other_event)
+    write(dev, OperationControl, OperationControlPayload(operation_mode=OperationMode.ACTIVE))
+    return dev
+
+
+def read(dev, register):
+    """Decoded payload of a register, or None if the device did not answer."""
     try:
-        ser.write(encode(MSG_WRITE, R_RESET_DEV, PT_U8, bytes([command])))
-        time.sleep(0.3)
-    except serial.SerialException:
+        reply = dev.read(register)
+    except HarpParseError:
+        return None  # an error reply, see _ErrorReply
+    except DEVICE_FAILURES:
+        return None
+    return None if reply.has_error else reply.payload
+
+
+def write(dev, register, value):
+    """Reply to a write, or None if the device did not answer. An error reply is
+    returned, not raised, so a check can expect one."""
+    try:
+        return dev.write(register, value)
+    except HarpParseError:
+        return ERROR_REPLY
+    except DEVICE_FAILURES:
+        return None
+
+
+def accepted(reply):
+    return reply is not None and not reply.has_error
+
+
+def rejected(reply):
+    return reply is not None and reply.has_error
+
+
+def reopen(dev, port):
+    """Close the port, wait for the device to boot, and open it again."""
+    try:
+        dev.close()
+    except DEVICE_FAILURES:
         pass
-    ser.close()
     time.sleep(REBOOT_SECONDS)
-    ser = open_port(port, settle=1.0)
-    write_u8(ser, R_OP_CTRL, OP_ACTIVE)
-    return ser
+    return connect(port)
 
 
-def write_name(ser, name):
-    padded = name.encode()[:DEVICE_NAME_LEN - 1]
-    padded += bytes(DEVICE_NAME_LEN - len(padded))
-    return request(ser, MSG_WRITE, R_DEVICE_NAME, PT_U8, padded)
+def reboot(dev, port, command):
+    """Send a reset command and reconnect. The device replies and then drops the
+    USB port, so the port has to be closed and opened again."""
+    write(dev, ResetDevice, command)
+    return reopen(dev, port)
 
 
-def check_settings(ser, port, results):
+def wait_status(dev, wanted, timeout):
+    deadline = time.perf_counter() + timeout
+    while time.perf_counter() < deadline:
+        if read(dev, GateState) == wanted:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def print_identity(dev):
+    """Read what Bonsai reads when the Device node connects, and print it the way
+    the Bonsai console does. Returns WhoAmI and the device name."""
+    who = read(dev, WhoAmI)
+    hw = (read(dev, HardwareVersionHigh), read(dev, HardwareVersionLow))
+    fw = (read(dev, FirmwareVersionHigh), read(dev, FirmwareVersionLow))
+    core = (read(dev, CoreVersionHigh), read(dev, CoreVersionLow))
+    asm = read(dev, AssemblyVersion)
+    name = read(dev, DeviceName)
+    serial_no = read(dev, SerialNumber)
+    print(f"  Bonsai console line:  Serial Harp device. WhoAmI: {who} Hw: {hw[0]}.{hw[1]} "
+          f"Fw: {fw[0]}.{fw[1]} DeviceName: {name}")
+    print(f"  Device Setup dialog:  DeviceName={name} WhoAmI={who} HardwareVersion={hw[0]}.{hw[1]}")
+    print(f"                        FirmwareVersion={fw[0]}.{fw[1]} CoreVersion={core[0]}.{core[1]} "
+          f"AssemblyVersion={asm} SerialNumber={serial_no}")
+    return who, name
+
+
+def non_volatile(schema):
+    """Registers device.yml marks non-volatile, as name -> (register class,
+    default value, test value). The test value is one step away from the default
+    and inside the declared range."""
+    out = {}
+    for name, model in schema.registers.items():
+        if model.volatile is not False or model.defaultValue is None:
+            continue
+        default = int(model.defaultValue.root)
+        low = int(model.minValue.root) if model.minValue is not None else 0
+        high = int(model.maxValue.root) if model.maxValue is not None else 255
+        probe = next(v for v in (default - 1, default + 1) if low <= v <= high)
+        out[name] = (vertigate.REGISTER_MAP[model.address], default, probe)
+    return out
+
+
+def check_settings(dev, port, schema, results):
     """Check that a written value survives a reboot.
 
-    device.yml marks Speed, Torque and CalibrationOffset `volatile: false`,
-    so the firmware stores them on write. R_RESET_DEV reports how the device
-    booted and can put the defaults back.
+    The firmware stores a non-volatile register when it is written. ResetDevice
+    reports how the device booted and can put the defaults back.
     """
-    flags = read_u8(ser, R_RESET_DEV)
+    registers = non_volatile(schema)
+    print(f"   device.yml marks {len(registers)} registers non-volatile: {', '.join(registers)}")
+
+    flags = read(dev, ResetDevice)
     results.append(check(flags is not None, "ResetDevice is readable"))
-    results.append(check(flags in (BOOT_DEF, BOOT_EE), f"one boot bit set, read 0x{flags:02X}" if flags is not None else "no boot bits"))
+    boot_bits = (ResetFlags.BOOT_FROM_DEFAULT, ResetFlags.BOOT_FROM_EEPROM)
+    results.append(check(flags in boot_bits,
+                         f"one boot bit set, read 0x{flags:02X}" if flags is not None else "no boot bits"))
+    results.append(check(rejected(write(dev, ResetDevice, ResetFlags.BOOT_FROM_EEPROM)),
+                         "writing a boot bit gives an error reply"))
 
-    reply = request(ser, MSG_WRITE, R_RESET_DEV, PT_U8, bytes([BOOT_EE]))
-    results.append(check(reply is not None and reply["error"], "writing a boot bit gives an error reply"))
+    dev = reboot(dev, port, ResetFlags.RESTORE_DEFAULT)
+    results.append(check(read(dev, ResetDevice) == ResetFlags.BOOT_FROM_DEFAULT,
+                         "RestoreDefault boots from the defaults"))
+    for name, (register, default, _) in registers.items():
+        value = read(dev, register)
+        results.append(check(value == default,
+                             f"{name} holds the default from device.yml, expected {default}, read {value}"))
 
-    ser = reboot(ser, port, RST_DEF)
-    results.append(check(read_u8(ser, R_RESET_DEV) == BOOT_DEF, "RST_DEF boots from the defaults"))
-    speed, torque = read_u8(ser, ADDR_SPEED), read_u8(ser, ADDR_TORQUE)
-    results.append(check(speed == SPEED_DEFAULT and torque == TORQUE_DEFAULT,
-                         f"defaults are in the registers: Speed {speed}, Torque {torque}"))
+    for name, (register, _, probe) in registers.items():
+        results.append(check(accepted(write(dev, register, probe)), f"{name} accepted the value {probe}"))
+    dev = reboot(dev, port, ResetFlags.RESTORE_EEPROM)
+    results.append(check(read(dev, ResetDevice) == ResetFlags.BOOT_FROM_EEPROM,
+                         "the device boots from storage"))
+    for name, (register, _, probe) in registers.items():
+        value = read(dev, register)
+        results.append(check(value == probe, f"{name} kept {probe} over the reboot, read {value}"))
 
-    write_u8(ser, ADDR_SPEED, 200)
-    write_u8(ser, ADDR_TORQUE, 42)
-    ser = reboot(ser, port, RST_EE)
-    results.append(check(read_u8(ser, R_RESET_DEV) == BOOT_EE, "the device boots from storage"))
-    speed, torque = read_u8(ser, ADDR_SPEED), read_u8(ser, ADDR_TORQUE)
-    results.append(check(speed == 200 and torque == 42,
-                         f"written values survived the reboot: Speed {speed}, Torque {torque}"))
+    dev = reboot(dev, port, ResetFlags.RESTORE_DEFAULT)
+    for name, (register, default, _) in registers.items():
+        value = read(dev, register)
+        results.append(check(value == default, f"RestoreDefault put {name} back to {default}, read {value}"))
 
-    ser = reboot(ser, port, RST_DEF)
-    speed, torque = read_u8(ser, ADDR_SPEED), read_u8(ser, ADDR_TORQUE)
-    results.append(check(speed == SPEED_DEFAULT and torque == TORQUE_DEFAULT,
-                         f"RST_DEF puts the defaults back: Speed {speed}, Torque {torque}"))
-
-    # The device name is non-volatile too, and the specification says a write
-    # to it must be saved and must reset the device.
-    original = read_str(ser, R_DEVICE_NAME)
-    write_name(ser, "GateTestName")
-    time.sleep(0.3)
-    ser.close()
-    time.sleep(REBOOT_SECONDS)
-    ser = open_port(port, settle=1.0)
-    write_u8(ser, R_OP_CTRL, OP_ACTIVE)
-    name = read_str(ser, R_DEVICE_NAME)
+    # The device name is non-volatile too, and the specification says a write to
+    # it must be saved and must reset the device. So the write is its own
+    # reboot: no ResetDevice command follows it.
+    write(dev, DeviceName, "GateTestName")
+    dev = reopen(dev, port)
+    name = read(dev, DeviceName)
     results.append(check(name == "GateTestName", f"the written device name survived the reboot, read {name!r}"))
 
-    ser = reboot(ser, port, RST_DEF)
-    name = read_str(ser, R_DEVICE_NAME)
-    results.append(check(name == original, f"RST_DEF puts the name back to {original!r}, read {name!r}"))
-    return ser
+    dev = reboot(dev, port, ResetFlags.RESTORE_DEFAULT)
+    name = read(dev, DeviceName)
+    results.append(check(name == vertigate.DEVICE_NAME,
+                         f"RestoreDefault put the name back to {vertigate.DEVICE_NAME!r}, read {name!r}"))
+    return dev
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", default="COM21" if sys.platform == "win32" else "/dev/ttyACM0")
+    p.add_argument("--metadata", type=Path, default=METADATA, help="device.yml to test against")
     p.add_argument("--no-reboot", action="store_true",
                    help="skip the non-volatile settings checks, which reboot the board")
     args = p.parse_args()
 
-    results = []
-    with open_port(args.port) as ser:
+    if not args.metadata.is_file():
+        print(f"device.yml not found at {args.metadata}. Pass --metadata.", file=sys.stderr)
+        return 2
+    schema = parse_device_schema(args.metadata.read_text(encoding="utf-8"))
 
+    results = []
+    dev = connect(args.port)
+    try:
         print("1. Identity and state, as Bonsai sees it on connect")
-        who = print_identity(ser)
-        results.append(check(who is not None, f"WhoAmI = {who}"))
-        write_u8(ser, R_OP_CTRL, OP_ACTIVE)  # events are only sent in ACTIVE mode
-        v = read_u8(ser, ADDR_GATE_STATE)
-        results.append(check(v is not None, f"Status = {v} ({STATUS_NAMES.get(v, '?')})"))
-        if v == 4:
+        who, name = print_identity(dev)
+        results.append(check(who == vertigate.WHO_AM_I,
+                             f"WhoAmI = {who}, device.yml says {vertigate.WHO_AM_I}"))
+        results.append(check(name == vertigate.DEVICE_NAME,
+                             f"DeviceName = {name!r}, device.yml says {vertigate.DEVICE_NAME!r}"))
+        state = read(dev, GateState)
+        results.append(check(state is not None, f"GateState = {state} ({status_name(state)})"))
+        if state == GateStatus.CALIBRATING:
             print("  gate is still homing from boot, waiting")
-            results.append(check(wait_status(ser, 2, CAL_TIMEOUT_S), "boot homing reached Down"))
-            v = read_u8(ser, ADDR_GATE_STATE)
-        servo = v != 0xFF
+            results.append(check(wait_status(dev, GateStatus.DOWN, CAL_TIMEOUT_S), "boot homing reached Down"))
+            state = read(dev, GateState)
+        servo = state != GateStatus.ERROR
         if not servo:
             print("  no servo answering: expecting Error instead of Idle and Down")
-        after_stop = 0 if servo else 0xFF
-        after_home = 2 if servo else 0xFF
+        after_stop = GateStatus.IDLE if servo else GateStatus.ERROR
+        after_home = GateStatus.DOWN if servo else GateStatus.ERROR
 
         print("2. Conflicting bits are rejected")
-        f = write_u8(ser, ADDR_CONTROL, CTRL_ENABLE_MOTOR | CTRL_DISABLE_MOTOR)
-        results.append(check(f is not None and f["error"], "Enable + Disable gives an error reply"))
+        reply = write(dev, Control, ControlFlags.ENABLE_MOTOR | ControlFlags.DISABLE_MOTOR)
+        results.append(check(rejected(reply), "EnableMotor + DisableMotor gives an error reply"))
 
         print("3. Stop halts a movement")
-        write_u8(ser, ADDR_TARGET_POSITION, 255)
+        # Drive towards the far end, so there is always a movement to stop. A
+        # gate that is already at the target never moves, and Stop would then
+        # leave it reporting Up or Down instead of Idle.
+        target = 0 if state == GateStatus.UP else 255
+        print(f"  gate is {status_name(state)}, moving to {target}")
+        write(dev, TargetPosition, target)
         time.sleep(0.5)
-        f = write_u8(ser, ADDR_CONTROL, CTRL_STOP)
-        results.append(check(f is not None and not f["error"], "Stop write accepted"))
+        results.append(check(accepted(write(dev, Control, ControlFlags.STOP)), "Stop write accepted"))
         time.sleep(0.3)
-        v = read_u8(ser, ADDR_GATE_STATE)
-        results.append(check(v == after_stop, f"Status after Stop = {v} ({STATUS_NAMES.get(v, '?')}), expected {STATUS_NAMES[after_stop]}"))
-        drain_events(ser, 0.5)
+        state = read(dev, GateState)
+        results.append(check(state == after_stop,
+                             f"GateState after Stop = {state} ({status_name(state)}), "
+                             f"expected {status_name(after_stop)}"))
 
         print("4. Calibrate homes the gate")
-        f = write_u8(ser, ADDR_CONTROL, CTRL_CALIBRATE)
-        results.append(check(f is not None and not f["error"], "Calibrate write accepted"))
+        results.append(check(accepted(write(dev, Control, ControlFlags.CALIBRATE)), "Calibrate write accepted"))
         time.sleep(0.2)
-        v = read_u8(ser, ADDR_GATE_STATE)
+        state = read(dev, GateState)
         # Without a servo the setup fails at once, so Calibrating is too short to see.
-        during = (4,) if servo else (4, 0xFF)
-        results.append(check(v in during, f"Status during homing = {v} ({STATUS_NAMES.get(v, '?')}), expected {' or '.join(STATUS_NAMES[d] for d in during)}"))
-        results.append(check(wait_status(ser, after_home, CAL_TIMEOUT_S), f"homing reached {STATUS_NAMES[after_home]} within the timeout"))
-        drain_events(ser, 0.5)
+        during = (GateStatus.CALIBRATING,) if servo else (GateStatus.CALIBRATING, GateStatus.ERROR)
+        results.append(check(state in during,
+                             f"GateState during homing = {state} ({status_name(state)}), "
+                             f"expected {' or '.join(status_name(d) for d in during)}"))
+        results.append(check(wait_status(dev, after_home, CAL_TIMEOUT_S),
+                             f"homing reached {status_name(after_home)} within the timeout"))
 
         if args.no_reboot:
             print("5. Non-volatile settings: skipped (--no-reboot)")
         else:
             print("5. Non-volatile settings survive a reboot")
-            print(f"   this reboots the board three times, about {3 * REBOOT_SECONDS} seconds")
-            ser = check_settings(ser, args.port, results)
-        ser.close()
+            print(f"   this reboots the board four times, about {4 * REBOOT_SECONDS} seconds")
+            dev = check_settings(dev, args.port, schema, results)
+    finally:
+        dev.close()
 
     print()
     print(f"{sum(results)} of {len(results)} checks passed")
