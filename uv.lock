@@ -26,12 +26,14 @@ dependencies = [
 harp = [
     { name = "harp-device" },
     { name = "harp-protocol" },
+    { name = "harp-serial" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "harp-device", marker = "extra == 'harp'", specifier = ">=0.5.0" },
     { name = "harp-protocol", marker = "extra == 'harp'", specifier = ">=0.5.0" },
+    { name = "harp-serial", marker = "extra == 'harp'", specifier = ">=0.5.0" },
     { name = "mpremote", specifier = ">=1.24" },
     { name = "pyserial", specifier = ">=3.5" },
 ]
@@ -72,6 +74,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6d/7d/48e9ba2d0b8182966a1cc8bba573201ef5256c57b2a172c32e071f34a087/harp_protocol-0.5.0.tar.gz", hash = "sha256:1109c82e4766ae579cec150da125540343dac9c33e8ac171b69f22b3485b1b75", size = 29322, upload-time = "2026-08-25T23:01:41.62Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0e/30/9c92a60a89fbc0360a456201931cfa8002e15c6cbb4a6b252e478eb3f834/harp_protocol-0.5.0-py3-none-any.whl", hash = "sha256:f06d3c69e31c5a5ac5d530006ad003ebf5e552de5eed521a83fb85526d68a152", size = 31172, upload-time = "2026-08-25T23:01:36.993Z" },
+]
+
+[[package]]
+name = "harp-serial"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "harp-device" },
+    { name = "harp-protocol" },
+    { name = "pyserial" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5d/7d/2a8a97edc3c63258d77d124c77f4fc7ec685d5c80884944c6a05bffc0c35/harp_serial-0.5.0.tar.gz", hash = "sha256:192d202d6e2ca48923ada2d185c8a68d90dce47843591d251fa2c793d1e2a713", size = 4120, upload-time = "2026-08-25T23:01:42.442Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/5f/a995eb0e17064690d72c90bb2af85224ea37f9162b1ce076a2752953810a/harp_serial-0.5.0-py3-none-any.whl", hash = "sha256:e1fd7d1b547d2e470e5d3dfff9dbcbfdf445b8b1ba323cc774b071b9dc4cc280", size = 4562, upload-time = "2026-08-25T23:01:38.1Z" },
 ]
 
 [[package]]
