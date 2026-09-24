@@ -7,6 +7,17 @@
                  xmlns="https://bonsai-rx.org/2018/workflow">
   <Workflow>
     <Nodes>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="rx:Timer">
+          <rx:DueTime>PT2S</rx:DueTime>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="harp:SynchronizeTimestamp" />
+      </Expression>
+      <Expression xsi:type="MulticastSubject">
+        <Name>Commands</Name>
+      </Expression>
       <Expression xsi:type="rx:BehaviorSubject" TypeArguments="harp:HarpMessage">
         <rx:Name>Commands</rx:Name>
       </Expression>
@@ -19,7 +30,7 @@
           <harp:OperationLed>On</harp:OperationLed>
           <harp:DumpRegisters>true</harp:DumpRegisters>
           <harp:VisualIndicators>On</harp:VisualIndicators>
-          <harp:Heartbeat>Disabled</harp:Heartbeat>
+          <harp:Heartbeat>Enabled</harp:Heartbeat>
           <harp:IgnoreErrors>true</harp:IgnoreErrors>
           <harp:PortName>COM4</harp:PortName>
         </Combinator>
@@ -30,9 +41,11 @@
       <Expression xsi:type="IncludeWorkflow" Path="Extensions\GateControlPanel.bonsai" />
     </Nodes>
     <Edges>
-      <Edge From="0" To="2" Label="Source1" />
-      <Edge From="1" To="2" Label="Source2" />
-      <Edge From="2" To="3" Label="Source1" />
+      <Edge From="0" To="1" Label="Source1" />
+      <Edge From="1" To="2" Label="Source1" />
+      <Edge From="3" To="5" Label="Source1" />
+      <Edge From="4" To="5" Label="Source2" />
+      <Edge From="5" To="6" Label="Source1" />
     </Edges>
   </Workflow>
 </WorkflowBuilder>
