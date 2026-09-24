@@ -1,4 +1,5 @@
 from dynamixel import Dynamixel, DynamixelModel
+from dynamixel.table import ControlTableItem
 from micropython import const
 from asyncio import Event
 import asyncio
@@ -14,6 +15,9 @@ TRQ_DEFAULT = const(35)
 VEL_DEFAULT = const(255)
 
 LENGTH = const(12000)
+# Encoder counts per TargetPosition step. move() and position use the same
+# scale, so a commanded value and a measured one can be compared.
+POS_SCALE = const(48)
 
 IDLE = const(0x00)
 UP = const(0x01)
@@ -35,6 +39,16 @@ CAL_SAMPLE_MS = const(10)
 CAL_SETTLE_MS = const(200)
 CAL_TIMEOUT_MS = const(10_000)
 CAL_HOME_OFFSET = const(400)  # Small offset so the platform is fully lowered
+
+def scale_position(encoder, home):
+    """Turn a pair of encoder counts into a TargetPosition step, 0 to 255.
+
+    The task reports Position and RawPosition from one servo read, so it needs
+    the same scale the `position` property uses.
+    """
+    pos = (encoder - home) // POS_SCALE
+    return 0 if pos < 0 else 255 if pos > 255 else pos
+
 
 class Gate(Dynamixel):
 
@@ -127,6 +141,35 @@ class Gate(Dynamixel):
         return self.home_pos + LENGTH + self._offset
 
     @property
+    def position(self) -> int:
+        """Where the gate is now, on the TargetPosition scale of 0 to 255.
+
+        Raises if the servo does not answer.
+        """
+        return scale_position(self.present_position, self.home_pos)
+
+    @property
+    def raw_position(self):
+        """The servo count and the recorded home, both in encoder counts.
+
+        Position is built from this pair and then clamped, so the pair is what
+        a calibration changes. Raises if the servo does not answer.
+        """
+        return (self.present_position, self.home_pos)
+
+    @property
+    def telemetry(self):
+        """Voltage in 0.1 V, temperature in C, current in mA, and the servo
+        hardware error status. Raises if the servo does not answer.
+        """
+        return (
+            self._read_value(ControlTableItem.PRESENT_INPUT_VOLTAGE),
+            self._read_value(ControlTableItem.PRESENT_TEMPERATURE),
+            self.present_current,
+            self._read_value(ControlTableItem.HARDWARE_ERROR_STATUS),
+        )
+
+    @property
     def motor_enabled(self) -> bool:
         return not self._motor_disabled
 
@@ -150,7 +193,7 @@ class Gate(Dynamixel):
             self.move(255)
 
     def move(self, pos):
-        pos = 48 * pos + self.home_pos
+        pos = POS_SCALE * pos + self.home_pos
         pos = self.home_pos if pos < self.home_pos else pos
         pos = self.max_pos if pos > self.max_pos else pos
         self.target_pos = pos

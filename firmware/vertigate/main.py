@@ -4,7 +4,9 @@ from machine import Pin, UART
 from usb.device.cdc import CDCInterface
 import usb.device
 from gate import Gate
-from register import ADDR_GATE_STATE, ADDR_MOTOR_STATE, setup_register_handlers
+from register import (ADDR_GATE_STATE, ADDR_MOTOR_STATE, ADDR_POSITION,
+                      ADDR_RAW_POSITION, ADDR_SERVO_TELEMETRY, boot_motor_enabled,
+                      setup_register_handlers)
 from task import setup_user_task
 
 
@@ -43,13 +45,20 @@ def main():
     device.bank.get(R_HARP_VERSION_L).storage[0] = HARP_VERSION[1]
 
     setup_register_handlers(device, myGate)
-    setup_user_task(device, myGate, ADDR_GATE_STATE, ADDR_MOTOR_STATE)
+    setup_user_task(device, myGate, ADDR_GATE_STATE, ADDR_MOTOR_STATE,
+                    ADDR_POSITION, ADDR_SERVO_TELEMETRY, ADDR_RAW_POSITION)
 
     # Home the gate once the device is running, so USB comes up first.
     # Control.Calibrate runs the same task again on request.
     @device.task
     async def _home_at_boot():
-        myGate.start_calibration()
+        if boot_motor_enabled():
+            myGate.start_calibration()
+        else:
+            # The gate was stored with the motor off. Do not move it. The
+            # latch refuses every movement command until the host enables
+            # the motor, and the gate reports Idle because it is not homed.
+            myGate.disable()
 
     asyncio.run(device.run())
 

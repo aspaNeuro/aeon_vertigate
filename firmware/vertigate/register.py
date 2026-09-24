@@ -1,12 +1,13 @@
 import asyncio
 import struct
 
-from microharp import EVENT, PT_U8, PT_S8, READ_ONLY, READ_WRITE, WRITE_ONLY, HarpDevice
+from microharp import (EVENT, PT_U8, PT_S8, PT_S16, PT_S32, READ_ONLY, READ_WRITE,
+                       WRITE_ONLY, HarpDevice)
 from microharp.registers import R_DEVICE_NAME, R_RESET_DEV
 from microharp.device import DEVICE_NAME_LEN
 from micropython import const
 import settings
-from gate import Gate, TRQ_DEFAULT, VEL_DEFAULT
+from gate import CALIBRATING, Gate, TRQ_DEFAULT, VEL_DEFAULT
 
 
 ADDR_CONTROL = 0x20
@@ -16,10 +17,29 @@ ADDR_SPD = 0x23
 ADDR_TRQ = 0x24
 ADDR_CALIBRATION_OFFSET = 0x25
 ADDR_MOTOR_STATE = 0x26
+ADDR_POSITION = 0x27
+ADDR_SERVO_TELEMETRY = 0x28
+ADDR_RAW_POSITION = 0x29
+
+# Control register bits. Each write is a command, not a setting.
+CTRL_ENABLE_MOTOR = const(0x01)
+CTRL_DISABLE_MOTOR = const(0x02)
+CTRL_STOP = const(0x04)
+CTRL_CALIBRATE = const(0x08)
+CTRL_ENABLE_POSITION_EVENT = const(0x10)
+CTRL_DISABLE_POSITION_EVENT = const(0x20)
+CTRL_ENABLE_TELEMETRY_EVENT = const(0x40)
+CTRL_DISABLE_TELEMETRY_EVENT = const(0x80)
+CTRL_PAIRS = (
+    CTRL_ENABLE_MOTOR | CTRL_DISABLE_MOTOR,
+    CTRL_ENABLE_POSITION_EVENT | CTRL_DISABLE_POSITION_EVENT,
+    CTRL_ENABLE_TELEMETRY_EVENT | CTRL_DISABLE_TELEMETRY_EVENT,
+)
 
 # Registers marked `volatile: false` in device.yml, with the `defaultValue`
 # declared there. Keep both in step with device.yml.
 DEFAULTS = {
+    ADDR_CONTROL: CTRL_ENABLE_MOTOR,
     ADDR_SPD: VEL_DEFAULT,
     ADDR_TRQ: TRQ_DEFAULT,
     ADDR_CALIBRATION_OFFSET: 0,
@@ -36,20 +56,6 @@ BOOT_BITS = const(0xC0)
 # Long enough for the write reply to reach the host before the port drops.
 REBOOT_DELAY_MS = const(150)
 
-# Control register bits. Each write is a command, not a setting.
-CTRL_ENABLE_MOTOR = const(0x01)
-CTRL_DISABLE_MOTOR = const(0x02)
-CTRL_STOP = const(0x04)
-CTRL_CALIBRATE = const(0x08)
-CTRL_ENABLE_POSITION_EVENT = const(0x10)
-CTRL_DISABLE_POSITION_EVENT = const(0x20)
-CTRL_ENABLE_TELEMETRY_EVENT = const(0x40)
-CTRL_DISABLE_TELEMETRY_EVENT = const(0x80)
-CTRL_PAIRS = (
-    CTRL_ENABLE_MOTOR | CTRL_DISABLE_MOTOR,
-    CTRL_ENABLE_POSITION_EVENT | CTRL_DISABLE_POSITION_EVENT,
-    CTRL_ENABLE_TELEMETRY_EVENT | CTRL_DISABLE_TELEMETRY_EVENT,
-)
 
 ERR_BAD_VALUE = const(1)
 ERR_SERVO = const(2)
@@ -84,6 +90,11 @@ def _apply(gate, address, value):
         gate.torque = value
     elif address == ADDR_CALIBRATION_OFFSET:
         gate.offset = value
+    elif address == ADDR_CONTROL:
+        # Only the state bits. The gate homes at boot, which needs the
+        # motor, so the motor state is put back after homing instead.
+        gate.position_events = bool(value & CTRL_ENABLE_POSITION_EVENT)
+        gate.telemetry_events = bool(value & CTRL_ENABLE_TELEMETRY_EVENT)
 
 
 # The values on flash, kept in memory so a write that changes nothing does not
@@ -131,14 +142,19 @@ def _store(address, value):
 
 def setup_register_handlers(device: HarpDevice, gate: Gate):
 
-    device.add_u8(ADDR_CONTROL, access=WRITE_ONLY, name="Control")
-    device.add_u8(ADDR_TARGET_POSITION, access=WRITE_ONLY, name="TargetPosition")
+    device.add_u8(ADDR_CONTROL, access=READ_WRITE, name="Control")
+    device.add_u8(ADDR_TARGET_POSITION, access=READ_WRITE, name="TargetPosition")
     device.add_u8(ADDR_GATE_STATE, access=READ_ONLY | EVENT, name="GateState")
     device.add_u8(ADDR_SPD, access=READ_WRITE, name="Speed")
     device.add_u8(ADDR_TRQ, access=READ_WRITE, name="Torque")
     # microharp has no add_s8 helper. Use the generic form.
     device.add_register(ADDR_CALIBRATION_OFFSET, PT_S8, access=READ_WRITE, name="CalibrationOffset")
     device.add_u8(ADDR_MOTOR_STATE, access=READ_ONLY | EVENT, name="MotorState")
+    device.add_u8(ADDR_POSITION, access=READ_ONLY | EVENT, name="Position")
+    device.add_register(ADDR_SERVO_TELEMETRY, PT_S16, n_elements=4,
+                        access=READ_ONLY | EVENT, name="ServoTelemetry")
+    device.add_register(ADDR_RAW_POSITION, PT_S32, n_elements=2,
+                        access=READ_ONLY | EVENT, name="RawPosition")
 
     @device.on_read(address=ADDR_GATE_STATE, payload_type=PT_U8, name="GateState")
     async def _gate_state(reg):
@@ -147,6 +163,45 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
     @device.on_read(address=ADDR_MOTOR_STATE, payload_type=PT_U8, name="MotorState")
     async def _motor_state(reg):
         reg.storage[0] = 1 if gate.motor_enabled else 0
+
+    def _control_state():
+        """The state half of Control, as the `Enable` bit of each pair.
+
+        Stop and Calibrate are commands, not states, so they never appear.
+        """
+        state = CTRL_ENABLE_MOTOR if gate.motor_enabled else 0
+        if gate.position_events:
+            state |= CTRL_ENABLE_POSITION_EVENT
+        if gate.telemetry_events:
+            state |= CTRL_ENABLE_TELEMETRY_EVENT
+        return state
+
+    @device.on_read(address=ADDR_CONTROL, payload_type=PT_U8, name="Control")
+    async def _control_read(reg):
+        reg.storage[0] = _control_state()
+
+    @device.on_read(address=ADDR_POSITION, payload_type=PT_U8, name="Position")
+    async def _position(reg):
+        # Asked of the servo now, so a read is live whether or not the event
+        # stream is running.
+        try:
+            reg.storage[0] = gate.position
+        except Exception:
+            return ERR_SERVO
+
+    @device.on_read(address=ADDR_SERVO_TELEMETRY, payload_type=PT_S16, name="ServoTelemetry")
+    async def _servo_telemetry(reg):
+        try:
+            struct.pack_into('<4h', reg.storage, 0, *gate.telemetry)
+        except Exception:
+            return ERR_SERVO
+
+    @device.on_read(address=ADDR_RAW_POSITION, payload_type=PT_S32, name="RawPosition")
+    async def _raw_position(reg):
+        try:
+            struct.pack_into('<2i', reg.storage, 0, *gate.raw_position)
+        except Exception:
+            return ERR_SERVO
 
     @device.on_write(address=ADDR_CONTROL, payload_type=PT_U8, name="Control")
     async def _control(reg, payload):
@@ -160,8 +215,6 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
         # enables the motor in the same command is allowed to calibrate.
         if cmd & CTRL_CALIBRATE and not gate.motor_enabled and not cmd & CTRL_ENABLE_MOTOR:
             return ERR_MOTOR_DISABLED
-        reg.storage[0] = cmd
-
         try:
             if cmd & CTRL_STOP:
                 gate.stop()
@@ -182,6 +235,11 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
             gate.telemetry_events = True
         if cmd & CTRL_DISABLE_TELEMETRY_EVENT:
             gate.telemetry_events = False
+        # Keep the state, not the command. Stop and Calibrate change nothing
+        # here, so pressing them repeatedly never touches the flash.
+        state = _control_state()
+        reg.storage[0] = state
+        _store(ADDR_CONTROL, state)
 
     @device.on_write(address=ADDR_TARGET_POSITION, payload_type=PT_U8, name="TargetPosition")
     async def _target_position(reg, payload):
@@ -280,6 +338,16 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
             _stored.pop(R_DEVICE_NAME, None)
             return ERR_STORAGE
         _reboot_after_reply()
+
+
+def boot_motor_enabled():
+    """Whether the stored Control state has the motor enabled.
+
+    A disabled motor is how the host says the gate must not move. It may
+    have been disabled because of a physical fault, so the device does not
+    home at start-up until the host enables the motor again.
+    """
+    return bool(_stored.get(ADDR_CONTROL, CTRL_ENABLE_MOTOR) & CTRL_ENABLE_MOTOR)
 
 
 def _load_settings(device, gate):
