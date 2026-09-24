@@ -64,7 +64,9 @@ from aeon.vertigate.device import (
     ControlFlags,
     GateState,
     GateStatus,
+    Speed,
     TargetPosition,
+    Torque,
 )
 
 # device.yml, read for what the generated interface leaves out: which registers
@@ -340,6 +342,20 @@ def main():
                              f"expected {' or '.join(status_name(d) for d in during)}"))
         results.append(check(wait_status(dev, after_home, CAL_TIMEOUT_S),
                              f"homing reached {status_name(after_home)} within the timeout"))
+
+        # Homing puts the safe default speed and torque on the servo. It must put
+        # the configured values back, or a calibration silently resets them.
+        if servo:
+            write(dev, Speed, 200)
+            write(dev, Torque, 40)
+            write(dev, Control, ControlFlags.CALIBRATE)
+            wait_status(dev, after_home, CAL_TIMEOUT_S)
+            time.sleep(0.3)
+            kept = (read(dev, Speed), read(dev, Torque))
+            results.append(check(kept == (200, 40),
+                                 f"Calibrate kept Speed and Torque, read {kept}, expected (200, 40)"))
+        else:
+            print("  no servo: skipping the Calibrate settings check")
 
         if args.no_reboot:
             print("5. Non-volatile settings: skipped (--no-reboot)")
