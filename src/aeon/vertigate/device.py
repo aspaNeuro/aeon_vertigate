@@ -8,11 +8,14 @@ import numpy as np
 from harp.protocol import (
     AnonymousPayload,
     BitMask,
+    Field,
     GroupMask,
+    IdentityConverter,
     PayloadType,
     RegisterBase,
     RegisterS8,
     RegisterU8,
+    StructPayload,
 )
 from harp.device.core import REGISTER_MAP as _CORE_REGISTER_MAP
 
@@ -26,6 +29,8 @@ __all__ = [
     "ControlPayload",
     "GateStatePayload",
     "MotorStatePayload",
+    "ServoTelemetryPayload",
+    "RawPositionPayload",
     "Control",
     "TargetPosition",
     "GateState",
@@ -33,6 +38,9 @@ __all__ = [
     "Torque",
     "CalibrationOffset",
     "MotorState",
+    "Position",
+    "ServoTelemetry",
+    "RawPosition",
     "REGISTER_MAP",
 ]
 
@@ -118,8 +126,34 @@ class MotorStatePayload(AnonymousPayload[np.uint8]):
     __value__: MotorStatus = GroupMask(enum=MotorStatus, mask=0xFF)
 
 
+class ServoTelemetryPayload(StructPayload[np.int16], length=4):
+    """Represents the payload of the ServoTelemetry register."""
+
+    voltage: np.int16 = Field(IdentityConverter(np.int16))
+    """Supply voltage at the servo, in units of 0.1 V."""
+
+    temperature: np.int16 = Field(IdentityConverter(np.int16), offset=1)
+    """Servo temperature, in degrees Celsius."""
+
+    current: np.int16 = Field(IdentityConverter(np.int16), offset=2)
+    """Current through the motor, in mA. Negative means the other direction."""
+
+    hardware_error: np.int16 = Field(IdentityConverter(np.int16), offset=3)
+    """Servo hardware error status. 0 means no fault."""
+
+
+class RawPositionPayload(StructPayload[np.int32], length=2):
+    """Represents the payload of the RawPosition register."""
+
+    encoder: np.int32 = Field(IdentityConverter(np.int32))
+    """Position reported by the servo, in raw encoder counts."""
+
+    home: np.int32 = Field(IdentityConverter(np.int32), offset=1)
+    """The encoder count recorded as the fully-lowered home."""
+
+
 class Control(RegisterBase[ControlFlags]):
-    """Commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply."""
+    """Commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle."""
 
     address: ClassVar[int] = 32
     payload_type: ClassVar[PayloadType] = PayloadType.U8
@@ -166,6 +200,28 @@ class MotorState(RegisterBase[MotorStatus]):
     payload_class = MotorStatePayload
 
 
+class Position(RegisterU8):
+    """Where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm."""
+
+    address: ClassVar[int] = 39
+
+
+class ServoTelemetry(RegisterBase[ServoTelemetryPayload]):
+    """Readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second."""
+
+    address: ClassVar[int] = 40
+    payload_type: ClassVar[PayloadType] = PayloadType.S16
+    payload_class = ServoTelemetryPayload
+
+
+class RawPosition(RegisterBase[RawPositionPayload]):
+    """The two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um."""
+
+    address: ClassVar[int] = 41
+    payload_type: ClassVar[PayloadType] = PayloadType.S32
+    payload_class = RawPositionPayload
+
+
 REGISTER_MAP: dict[int, type[RegisterBase[Any]]] = {
     **_CORE_REGISTER_MAP,
     32: Control,
@@ -175,4 +231,7 @@ REGISTER_MAP: dict[int, type[RegisterBase[Any]]] = {
     36: Torque,
     37: CalibrationOffset,
     38: MotorState,
+    39: Position,
+    40: ServoTelemetry,
+    41: RawPosition,
 }

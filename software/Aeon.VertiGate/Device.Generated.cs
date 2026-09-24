@@ -50,7 +50,10 @@ namespace Aeon.VertiGate
             { 35, typeof(Speed) },
             { 36, typeof(Torque) },
             { 37, typeof(CalibrationOffset) },
-            { 38, typeof(MotorState) }
+            { 38, typeof(MotorState) },
+            { 39, typeof(Position) },
+            { 40, typeof(ServoTelemetry) },
+            { 41, typeof(RawPosition) }
         };
 
         /// <summary>
@@ -274,6 +277,9 @@ namespace Aeon.VertiGate
     /// <seealso cref="Torque"/>
     /// <seealso cref="CalibrationOffset"/>
     /// <seealso cref="MotorState"/>
+    /// <seealso cref="Position"/>
+    /// <seealso cref="ServoTelemetry"/>
+    /// <seealso cref="RawPosition"/>
     [XmlInclude(typeof(Control))]
     [XmlInclude(typeof(TargetPosition))]
     [XmlInclude(typeof(GateState))]
@@ -281,6 +287,9 @@ namespace Aeon.VertiGate
     [XmlInclude(typeof(Torque))]
     [XmlInclude(typeof(CalibrationOffset))]
     [XmlInclude(typeof(MotorState))]
+    [XmlInclude(typeof(Position))]
+    [XmlInclude(typeof(ServoTelemetry))]
+    [XmlInclude(typeof(RawPosition))]
     [Description("Filters register-specific messages reported by the VertiGate device.")]
     public class FilterRegister : FilterRegisterBuilder, INamedElement
     {
@@ -309,6 +318,9 @@ namespace Aeon.VertiGate
     /// <seealso cref="Torque"/>
     /// <seealso cref="CalibrationOffset"/>
     /// <seealso cref="MotorState"/>
+    /// <seealso cref="Position"/>
+    /// <seealso cref="ServoTelemetry"/>
+    /// <seealso cref="RawPosition"/>
     [XmlInclude(typeof(Control))]
     [XmlInclude(typeof(TargetPosition))]
     [XmlInclude(typeof(GateState))]
@@ -316,6 +328,9 @@ namespace Aeon.VertiGate
     [XmlInclude(typeof(Torque))]
     [XmlInclude(typeof(CalibrationOffset))]
     [XmlInclude(typeof(MotorState))]
+    [XmlInclude(typeof(Position))]
+    [XmlInclude(typeof(ServoTelemetry))]
+    [XmlInclude(typeof(RawPosition))]
     [XmlInclude(typeof(TimestampedControl))]
     [XmlInclude(typeof(TimestampedTargetPosition))]
     [XmlInclude(typeof(TimestampedGateState))]
@@ -323,6 +338,9 @@ namespace Aeon.VertiGate
     [XmlInclude(typeof(TimestampedTorque))]
     [XmlInclude(typeof(TimestampedCalibrationOffset))]
     [XmlInclude(typeof(TimestampedMotorState))]
+    [XmlInclude(typeof(TimestampedPosition))]
+    [XmlInclude(typeof(TimestampedServoTelemetry))]
+    [XmlInclude(typeof(TimestampedRawPosition))]
     [Description("Filters and selects specific messages reported by the VertiGate device.")]
     public partial class Parse : ParseBuilder, INamedElement
     {
@@ -348,6 +366,9 @@ namespace Aeon.VertiGate
     /// <seealso cref="Torque"/>
     /// <seealso cref="CalibrationOffset"/>
     /// <seealso cref="MotorState"/>
+    /// <seealso cref="Position"/>
+    /// <seealso cref="ServoTelemetry"/>
+    /// <seealso cref="RawPosition"/>
     [XmlInclude(typeof(Control))]
     [XmlInclude(typeof(TargetPosition))]
     [XmlInclude(typeof(GateState))]
@@ -355,6 +376,9 @@ namespace Aeon.VertiGate
     [XmlInclude(typeof(Torque))]
     [XmlInclude(typeof(CalibrationOffset))]
     [XmlInclude(typeof(MotorState))]
+    [XmlInclude(typeof(Position))]
+    [XmlInclude(typeof(ServoTelemetry))]
+    [XmlInclude(typeof(RawPosition))]
     [Description("Formats a sequence of values as specific VertiGate register messages.")]
     public partial class Format : FormatBuilder, INamedElement
     {
@@ -370,9 +394,9 @@ namespace Aeon.VertiGate
     }
 
     /// <summary>
-    /// Represents a register that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+    /// Represents a register that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.
     /// </summary>
-    [Description("Commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.")]
+    [Description("Commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.")]
     public partial class Control
     {
         /// <summary>
@@ -1045,6 +1069,334 @@ namespace Aeon.VertiGate
     }
 
     /// <summary>
+    /// Represents a register that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+    /// </summary>
+    [Description("Where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.")]
+    public partial class Position
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="Position"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 39;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="Position"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.U8;
+
+        /// <summary>
+        /// Represents the length of the <see cref="Position"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 1;
+
+        /// <summary>
+        /// Returns the payload data for <see cref="Position"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static byte GetPayload(HarpMessage message)
+        {
+            return message.GetPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="Position"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<byte> GetTimestampedPayload(HarpMessage message)
+        {
+            return message.GetTimestampedPayloadByte();
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="Position"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="Position"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, byte value)
+        {
+            return HarpMessage.FromByte(Address, messageType, value);
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="Position"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="Position"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, byte value)
+        {
+            return HarpMessage.FromByte(Address, timestamp, messageType, value);
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// Position register.
+    /// </summary>
+    /// <seealso cref="Position"/>
+    [Description("Filters and selects timestamped messages from the Position register.")]
+    public partial class TimestampedPosition
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="Position"/> register. This field is constant.
+        /// </summary>
+        public const int Address = Position.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="Position"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<byte> GetPayload(HarpMessage message)
+        {
+            return Position.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
+    /// Represents a register that readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second.
+    /// </summary>
+    [Description("Readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second.")]
+    public partial class ServoTelemetry
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="ServoTelemetry"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 40;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="ServoTelemetry"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.S16;
+
+        /// <summary>
+        /// Represents the length of the <see cref="ServoTelemetry"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 4;
+
+        static ServoTelemetryPayload ParsePayload(short[] payload)
+        {
+            ServoTelemetryPayload result;
+            result.Voltage = payload[0];
+            result.Temperature = payload[1];
+            result.Current = payload[2];
+            result.HardwareError = payload[3];
+            return result;
+        }
+
+        static short[] FormatPayload(ServoTelemetryPayload value)
+        {
+            short[] result;
+            result = new short[4];
+            result[0] = value.Voltage;
+            result[1] = value.Temperature;
+            result[2] = value.Current;
+            result[3] = value.HardwareError;
+            return result;
+        }
+
+        /// <summary>
+        /// Returns the payload data for <see cref="ServoTelemetry"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static ServoTelemetryPayload GetPayload(HarpMessage message)
+        {
+            return ParsePayload(message.GetPayloadArray<short>());
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="ServoTelemetry"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<ServoTelemetryPayload> GetTimestampedPayload(HarpMessage message)
+        {
+            var (payload, timestamp) = message.GetTimestampedPayloadArray<short>();
+            return Timestamped.Create(ParsePayload(payload), timestamp);
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="ServoTelemetry"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="ServoTelemetry"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, ServoTelemetryPayload value)
+        {
+            return HarpMessage.FromInt16(Address, messageType, FormatPayload(value));
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="ServoTelemetry"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="ServoTelemetry"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, ServoTelemetryPayload value)
+        {
+            return HarpMessage.FromInt16(Address, timestamp, messageType, FormatPayload(value));
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// ServoTelemetry register.
+    /// </summary>
+    /// <seealso cref="ServoTelemetry"/>
+    [Description("Filters and selects timestamped messages from the ServoTelemetry register.")]
+    public partial class TimestampedServoTelemetry
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="ServoTelemetry"/> register. This field is constant.
+        /// </summary>
+        public const int Address = ServoTelemetry.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="ServoTelemetry"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<ServoTelemetryPayload> GetPayload(HarpMessage message)
+        {
+            return ServoTelemetry.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
+    /// Represents a register that the two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um.
+    /// </summary>
+    [Description("The two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um.")]
+    public partial class RawPosition
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="RawPosition"/> register. This field is constant.
+        /// </summary>
+        public const int Address = 41;
+
+        /// <summary>
+        /// Represents the payload type of the <see cref="RawPosition"/> register. This field is constant.
+        /// </summary>
+        public const PayloadType RegisterType = PayloadType.S32;
+
+        /// <summary>
+        /// Represents the length of the <see cref="RawPosition"/> register. This field is constant.
+        /// </summary>
+        public const int RegisterLength = 2;
+
+        static RawPositionPayload ParsePayload(int[] payload)
+        {
+            RawPositionPayload result;
+            result.Encoder = payload[0];
+            result.Home = payload[1];
+            return result;
+        }
+
+        static int[] FormatPayload(RawPositionPayload value)
+        {
+            int[] result;
+            result = new int[2];
+            result[0] = value.Encoder;
+            result[1] = value.Home;
+            return result;
+        }
+
+        /// <summary>
+        /// Returns the payload data for <see cref="RawPosition"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the message payload.</returns>
+        public static RawPositionPayload GetPayload(HarpMessage message)
+        {
+            return ParsePayload(message.GetPayloadArray<int>());
+        }
+
+        /// <summary>
+        /// Returns the timestamped payload data for <see cref="RawPosition"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<RawPositionPayload> GetTimestampedPayload(HarpMessage message)
+        {
+            var (payload, timestamp) = message.GetTimestampedPayloadArray<int>();
+            return Timestamped.Create(ParsePayload(payload), timestamp);
+        }
+
+        /// <summary>
+        /// Returns a Harp message for the <see cref="RawPosition"/> register.
+        /// </summary>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="RawPosition"/> register
+        /// with the specified message type and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(MessageType messageType, RawPositionPayload value)
+        {
+            return HarpMessage.FromInt32(Address, messageType, FormatPayload(value));
+        }
+
+        /// <summary>
+        /// Returns a timestamped Harp message for the <see cref="RawPosition"/>
+        /// register.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">The type of the Harp message.</param>
+        /// <param name="value">The value to be stored in the message payload.</param>
+        /// <returns>
+        /// A <see cref="HarpMessage"/> object for the <see cref="RawPosition"/> register
+        /// with the specified message type, timestamp, and payload.
+        /// </returns>
+        public static HarpMessage FromPayload(double timestamp, MessageType messageType, RawPositionPayload value)
+        {
+            return HarpMessage.FromInt32(Address, timestamp, messageType, FormatPayload(value));
+        }
+    }
+
+    /// <summary>
+    /// Provides methods for manipulating timestamped messages from the
+    /// RawPosition register.
+    /// </summary>
+    /// <seealso cref="RawPosition"/>
+    [Description("Filters and selects timestamped messages from the RawPosition register.")]
+    public partial class TimestampedRawPosition
+    {
+        /// <summary>
+        /// Represents the address of the <see cref="RawPosition"/> register. This field is constant.
+        /// </summary>
+        public const int Address = RawPosition.Address;
+
+        /// <summary>
+        /// Returns timestamped payload data for <see cref="RawPosition"/> register messages.
+        /// </summary>
+        /// <param name="message">A <see cref="HarpMessage"/> object representing the register message.</param>
+        /// <returns>A value representing the timestamped message payload.</returns>
+        public static Timestamped<RawPositionPayload> GetPayload(HarpMessage message)
+        {
+            return RawPosition.GetTimestampedPayload(message);
+        }
+    }
+
+    /// <summary>
     /// Represents an operator which creates standard message payloads for the
     /// VertiGate device.
     /// </summary>
@@ -1055,6 +1407,9 @@ namespace Aeon.VertiGate
     /// <seealso cref="CreateTorquePayload"/>
     /// <seealso cref="CreateCalibrationOffsetPayload"/>
     /// <seealso cref="CreateMotorStatePayload"/>
+    /// <seealso cref="CreatePositionPayload"/>
+    /// <seealso cref="CreateServoTelemetryPayload"/>
+    /// <seealso cref="CreateRawPositionPayload"/>
     [XmlInclude(typeof(CreateControlPayload))]
     [XmlInclude(typeof(CreateTargetPositionPayload))]
     [XmlInclude(typeof(CreateGateStatePayload))]
@@ -1062,6 +1417,9 @@ namespace Aeon.VertiGate
     [XmlInclude(typeof(CreateTorquePayload))]
     [XmlInclude(typeof(CreateCalibrationOffsetPayload))]
     [XmlInclude(typeof(CreateMotorStatePayload))]
+    [XmlInclude(typeof(CreatePositionPayload))]
+    [XmlInclude(typeof(CreateServoTelemetryPayload))]
+    [XmlInclude(typeof(CreateRawPositionPayload))]
     [XmlInclude(typeof(CreateTimestampedControlPayload))]
     [XmlInclude(typeof(CreateTimestampedTargetPositionPayload))]
     [XmlInclude(typeof(CreateTimestampedGateStatePayload))]
@@ -1069,6 +1427,9 @@ namespace Aeon.VertiGate
     [XmlInclude(typeof(CreateTimestampedTorquePayload))]
     [XmlInclude(typeof(CreateTimestampedCalibrationOffsetPayload))]
     [XmlInclude(typeof(CreateTimestampedMotorStatePayload))]
+    [XmlInclude(typeof(CreateTimestampedPositionPayload))]
+    [XmlInclude(typeof(CreateTimestampedServoTelemetryPayload))]
+    [XmlInclude(typeof(CreateTimestampedRawPositionPayload))]
     [Description("Creates standard message payloads for the VertiGate device.")]
     public partial class CreateMessage : CreateMessageBuilder, INamedElement
     {
@@ -1085,16 +1446,16 @@ namespace Aeon.VertiGate
 
     /// <summary>
     /// Represents an operator that creates a message payload
-    /// that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+    /// that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.
     /// </summary>
     [DisplayName("ControlPayload")]
-    [Description("Creates a message payload that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.")]
+    [Description("Creates a message payload that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.")]
     public partial class CreateControlPayload
     {
         /// <summary>
-        /// Gets or sets the value that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+        /// Gets or sets the value that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.
         /// </summary>
-        [Description("The value that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.")]
+        [Description("The value that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.")]
         public ControlFlags Control { get; set; }
 
         /// <summary>
@@ -1107,7 +1468,7 @@ namespace Aeon.VertiGate
         }
 
         /// <summary>
-        /// Creates a message that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+        /// Creates a message that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.
         /// </summary>
         /// <param name="messageType">Specifies the type of the created message.</param>
         /// <returns>A new message for the Control register.</returns>
@@ -1119,14 +1480,14 @@ namespace Aeon.VertiGate
 
     /// <summary>
     /// Represents an operator that creates a timestamped message payload
-    /// that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+    /// that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.
     /// </summary>
     [DisplayName("TimestampedControlPayload")]
-    [Description("Creates a timestamped message payload that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.")]
+    [Description("Creates a timestamped message payload that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.")]
     public partial class CreateTimestampedControlPayload : CreateControlPayload
     {
         /// <summary>
-        /// Creates a timestamped message that commands for the gate. Each bit is one command. Writing a bit runs the command. The register stores no state. A write with both bits of a pair set is rejected with an error reply.
+        /// Creates a timestamped message that commands for the gate. Writing a bit runs one command. A write with both bits of a pair set is rejected with an error reply. Reading reports the state, not the last command: EnableMotor when the motor is on, EnablePositionEvent when Position events are on, and EnableTelemetryEvent when ServoTelemetry events are on. Stop and Calibrate are commands, so they never appear in a read. The state is kept over a power cycle.
         /// </summary>
         /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
         /// <param name="messageType">Specifies the type of the created message.</param>
@@ -1466,6 +1827,310 @@ namespace Aeon.VertiGate
         public HarpMessage GetMessage(double timestamp, MessageType messageType)
         {
             return Aeon.VertiGate.MotorState.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+    /// </summary>
+    [DisplayName("PositionPayload")]
+    [Description("Creates a message payload that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.")]
+    public partial class CreatePositionPayload
+    {
+        /// <summary>
+        /// Gets or sets the value that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+        /// </summary>
+        [Range(min: 0, max: 255)]
+        [Editor(DesignTypes.NumericUpDownEditor, DesignTypes.UITypeEditor)]
+        [Description("The value that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.")]
+        public byte Position { get; set; } = 0;
+
+        /// <summary>
+        /// Creates a message payload for the Position register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public byte GetPayload()
+        {
+            return Position;
+        }
+
+        /// <summary>
+        /// Creates a message that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the Position register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.Position.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+    /// </summary>
+    [DisplayName("TimestampedPositionPayload")]
+    [Description("Creates a timestamped message payload that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.")]
+    public partial class CreateTimestampedPositionPayload : CreatePositionPayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the Position register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.Position.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second.
+    /// </summary>
+    [DisplayName("ServoTelemetryPayload")]
+    [Description("Creates a message payload that readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second.")]
+    public partial class CreateServoTelemetryPayload
+    {
+        /// <summary>
+        /// Gets or sets a value that supply voltage at the servo, in units of 0.1 V.
+        /// </summary>
+        [Description("Supply voltage at the servo, in units of 0.1 V.")]
+        public short Voltage { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value that servo temperature, in degrees Celsius.
+        /// </summary>
+        [Description("Servo temperature, in degrees Celsius.")]
+        public short Temperature { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value that current through the motor, in mA. Negative means the other direction.
+        /// </summary>
+        [Description("Current through the motor, in mA. Negative means the other direction.")]
+        public short Current { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value that servo hardware error status. 0 means no fault.
+        /// </summary>
+        [Description("Servo hardware error status. 0 means no fault.")]
+        public short HardwareError { get; set; }
+
+        /// <summary>
+        /// Creates a message payload for the ServoTelemetry register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public ServoTelemetryPayload GetPayload()
+        {
+            ServoTelemetryPayload value;
+            value.Voltage = Voltage;
+            value.Temperature = Temperature;
+            value.Current = Current;
+            value.HardwareError = HardwareError;
+            return value;
+        }
+
+        /// <summary>
+        /// Creates a message that readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the ServoTelemetry register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.ServoTelemetry.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second.
+    /// </summary>
+    [DisplayName("TimestampedServoTelemetryPayload")]
+    [Description("Creates a timestamped message payload that readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second.")]
+    public partial class CreateTimestampedServoTelemetryPayload : CreateServoTelemetryPayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that readings from the servo. Read it at any time. EnableTelemetryEvent also reports it once a second.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the ServoTelemetry register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.ServoTelemetry.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a message payload
+    /// that the two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um.
+    /// </summary>
+    [DisplayName("RawPositionPayload")]
+    [Description("Creates a message payload that the two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um.")]
+    public partial class CreateRawPositionPayload
+    {
+        /// <summary>
+        /// Gets or sets a value that position reported by the servo, in raw encoder counts.
+        /// </summary>
+        [Description("Position reported by the servo, in raw encoder counts.")]
+        public int Encoder { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value that the encoder count recorded as the fully-lowered home.
+        /// </summary>
+        [Description("The encoder count recorded as the fully-lowered home.")]
+        public int Home { get; set; }
+
+        /// <summary>
+        /// Creates a message payload for the RawPosition register.
+        /// </summary>
+        /// <returns>The created message payload value.</returns>
+        public RawPositionPayload GetPayload()
+        {
+            RawPositionPayload value;
+            value.Encoder = Encoder;
+            value.Home = Home;
+            return value;
+        }
+
+        /// <summary>
+        /// Creates a message that the two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um.
+        /// </summary>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new message for the RawPosition register.</returns>
+        public HarpMessage GetMessage(MessageType messageType)
+        {
+            return Aeon.VertiGate.RawPosition.FromPayload(messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents an operator that creates a timestamped message payload
+    /// that the two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um.
+    /// </summary>
+    [DisplayName("TimestampedRawPositionPayload")]
+    [Description("Creates a timestamped message payload that the two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um.")]
+    public partial class CreateTimestampedRawPositionPayload : CreateRawPositionPayload
+    {
+        /// <summary>
+        /// Creates a timestamped message that the two encoder counts that Position is built from. Read it at any time. EnablePositionEvent also reports it beside every Position event. Position is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair shows the travel the clamp hides and the step when a calibration records a new home. One count is 25 um.
+        /// </summary>
+        /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
+        /// <param name="messageType">Specifies the type of the created message.</param>
+        /// <returns>A new timestamped message for the RawPosition register.</returns>
+        public HarpMessage GetMessage(double timestamp, MessageType messageType)
+        {
+            return Aeon.VertiGate.RawPosition.FromPayload(timestamp, messageType, GetPayload());
+        }
+    }
+
+    /// <summary>
+    /// Represents the payload of the ServoTelemetry register.
+    /// </summary>
+    public struct ServoTelemetryPayload
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ServoTelemetryPayload"/> structure.
+        /// </summary>
+        /// <param name="voltage">Supply voltage at the servo, in units of 0.1 V.</param>
+        /// <param name="temperature">Servo temperature, in degrees Celsius.</param>
+        /// <param name="current">Current through the motor, in mA. Negative means the other direction.</param>
+        /// <param name="hardwareError">Servo hardware error status. 0 means no fault.</param>
+        public ServoTelemetryPayload(
+            short voltage,
+            short temperature,
+            short current,
+            short hardwareError)
+        {
+            Voltage = voltage;
+            Temperature = temperature;
+            Current = current;
+            HardwareError = hardwareError;
+        }
+
+        /// <summary>
+        /// Supply voltage at the servo, in units of 0.1 V.
+        /// </summary>
+        public short Voltage;
+
+        /// <summary>
+        /// Servo temperature, in degrees Celsius.
+        /// </summary>
+        public short Temperature;
+
+        /// <summary>
+        /// Current through the motor, in mA. Negative means the other direction.
+        /// </summary>
+        public short Current;
+
+        /// <summary>
+        /// Servo hardware error status. 0 means no fault.
+        /// </summary>
+        public short HardwareError;
+
+        /// <summary>
+        /// Returns a <see cref="string"/> that represents the payload of
+        /// the ServoTelemetry register.
+        /// </summary>
+        /// <returns>
+        /// A <see cref="string"/> that represents the payload of the
+        /// ServoTelemetry register.
+        /// </returns>
+        public override string ToString()
+        {
+            return "ServoTelemetryPayload { " +
+                "Voltage = " + Voltage + ", " +
+                "Temperature = " + Temperature + ", " +
+                "Current = " + Current + ", " +
+                "HardwareError = " + HardwareError + " " +
+            "}";
+        }
+    }
+
+    /// <summary>
+    /// Represents the payload of the RawPosition register.
+    /// </summary>
+    public struct RawPositionPayload
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RawPositionPayload"/> structure.
+        /// </summary>
+        /// <param name="encoder">Position reported by the servo, in raw encoder counts.</param>
+        /// <param name="home">The encoder count recorded as the fully-lowered home.</param>
+        public RawPositionPayload(
+            int encoder,
+            int home)
+        {
+            Encoder = encoder;
+            Home = home;
+        }
+
+        /// <summary>
+        /// Position reported by the servo, in raw encoder counts.
+        /// </summary>
+        public int Encoder;
+
+        /// <summary>
+        /// The encoder count recorded as the fully-lowered home.
+        /// </summary>
+        public int Home;
+
+        /// <summary>
+        /// Returns a <see cref="string"/> that represents the payload of
+        /// the RawPosition register.
+        /// </summary>
+        /// <returns>
+        /// A <see cref="string"/> that represents the payload of the
+        /// RawPosition register.
+        /// </returns>
+        public override string ToString()
+        {
+            return "RawPositionPayload { " +
+                "Encoder = " + Encoder + ", " +
+                "Home = " + Home + " " +
+            "}";
         }
     }
 
