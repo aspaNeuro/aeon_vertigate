@@ -216,6 +216,11 @@ class Gate(Dynamixel):
 
         Runs as a task, so the device stays on the bus while homing.
         On timeout or a servo error the gate enters the ERROR state.
+
+        Homing drives the gate into the end stop, so `_setup_servo` puts the
+        safe default speed and torque on the servo. The values the host set
+        are read first and put back at the end, so a calibration does not
+        change them.
         """
         self._iserror = False
         self._isup = False
@@ -223,11 +228,16 @@ class Gate(Dynamixel):
         self._iscalibrating = True
         self.isr.set()
         try:
+            speed, torque = self.speed, self.torque
             self._setup_servo()
             await asyncio.wait_for_ms(self._find_home(), CAL_TIMEOUT_MS)
             self.home_pos = self.present_position + CAL_HOME_OFFSET
             self.target_pos = self.home_pos
             self._isdown = True
+            # Put the values back before the motor is released. Both setters
+            # switch the motor on, so the order matters.
+            self.speed = speed
+            self.torque = torque
             self.torque_enabled = False
         except Exception:
             # asyncio.TimeoutError, or a servo comms error. A CancelledError
