@@ -2,8 +2,10 @@
 # Aeon.VertiGate CI/CD
 # =======================================================================================================================================================================
 # Index:
+# * Verify generated code
 # * Build firmware
 # * Build interface
+# * Build Python
 # * Publish packages to GitHub
 # * Publish packages to NuGet.org
 # =======================================================================================================================================================================
@@ -28,6 +30,51 @@ env:
   MICROPYTHON_VERSION: v1.29.0
 jobs:
   # =====================================================================================================================================================================
+  # Verify generated code
+  # =====================================================================================================================================================================
+  # Regenerate every target from device.yml and fail if the result differs from what is committed. Every build job depends on
+  # this, so no artifact is published from a tree whose generated code has drifted. device.behavior#39 does the same.
+  #
+  # The firmware source is not regenerated. There is no MicroPython target in the generator, so only the version module is
+  # covered. See harp-tech/generators#142 and issue #11.
+  verify-generated:
+    name: Verify generated code
+    runs-on: ubuntu-latest
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      - name: Set up .NET tools
+        run: dotnet tool restore
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+
+      # ----------------------------------------------------------------------- Regenerate
+      - name: Generate C# interface
+        run: dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
+
+      - name: Generate Python interface
+        run: dotnet harp.toolkit generate interface python device.yml --package --output software/python/src/swc/aeon/device/vertigate
+
+      - name: Generate firmware version module
+        run: uv run firmware/tools/firmware_version.py
+
+      # ----------------------------------------------------------------------- Verify
+      - name: Verify pre-generated code was up-to-date
+        id: verify-dist
+        run: |
+          git add . --intent-to-add --ignore-removal
+          git diff --name-status --exit-code
+
+  # =====================================================================================================================================================================
   # Build firmware
   #  ___      _ _    _    __ _
   # | _ )_  _(_) |__| |  / _(_)_ _ _ ____ __ ____ _ _ _ ___
@@ -43,6 +90,7 @@ jobs:
             board: NEUROPICO
     name: Build Firmware (hw${{matrix.hardware-target}})
     runs-on: ubuntu-latest
+    needs: verify-generated
     steps:
       # ----------------------------------------------------------------------- Checkout
       - name: Checkout
@@ -59,15 +107,6 @@ jobs:
       - name: Configure build
         id: configure-build
         uses: harp-tech/configure-build@v2
-
-      # ----------------------------------------------------------------------- Regenerate
-      - name: Regenerate firmware version module
-        run: uv run firmware/tools/firmware_version.py
-
-      - name: Verify generated code is up-to-date
-        run: |
-          git add . --intent-to-add --ignore-removal
-          git diff --name-status --exit-code
 
       # ----------------------------------------------------------------------- Set up MicroPython
       - name: Checkout MicroPython
@@ -144,6 +183,7 @@ jobs:
             collect-packages: true
     name: Build Interface (${{matrix.platform.name}} ${{matrix.configuration}})
     runs-on: ${{matrix.platform.os}}
+    needs: verify-generated
     steps:
       # ----------------------------------------------------------------------- Checkout
       - name: Checkout
@@ -162,17 +202,6 @@ jobs:
       - name: Configure build
         id: configure-build
         uses: harp-tech/configure-build@v2
-
-      # ----------------------------------------------------------------------- Regenerate
-      - name: Regenerate interfaces
-        run: |
-          dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
-          dotnet harp.toolkit generate interface python device.yml --package --output software/python/src/swc/aeon/device/vertigate
-
-      - name: Verify generated code is up-to-date
-        run: |
-          git add . --intent-to-add --ignore-removal
-          git diff --name-status --exit-code
 
       # ----------------------------------------------------------------------- Build interface package
       - name: Restore
@@ -193,6 +222,44 @@ jobs:
           name: Packages
           if-no-files-found: error
           path: artifacts/package/${{matrix.configuration}}/**
+
+  # =====================================================================================================================================================================
+  # Build Python
+  # =====================================================================================================================================================================
+  # The freshness gate proves the committed interface matches what the generator emits. It does not prove the result imports,
+  # so this job installs it and runs tests/ against device.yml. No hardware is involved. The hardware checks are in
+  # swc.aeon.device.vertigate.hwtest and are run by hand against a board.
+  build-python:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+    name: Build Python (${{matrix.python-version}})
+    runs-on: ubuntu-latest
+    needs: verify-generated
+    defaults:
+      run:
+        working-directory: software/python
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      # ----------------------------------------------------------------------- Build and test the interface
+      - name: Restore
+        run: uv sync --group dev --extra test --python ${{matrix.python-version}}
+
+      - name: Test
+        run: uv run --no-sync pytest tests/
+
+      - name: Build
+        run: uv build
 
   # =====================================================================================================================================================================
   # Publish packages to GitHub
