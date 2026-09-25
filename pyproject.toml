@@ -1,0 +1,33 @@
+[project]
+name = "aeon-vertigate"
+version = "0.1.0"
+description = "Host tools for the VertiGate Harp device: flashing, testing and the Python interface."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "mpremote>=1.24",
+  "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+# The generated interface in src/aeon/vertigate/device.py needs harp-protocol
+# and harp-device, which were split out of harp-python in 0.5.0. The hardware
+# test also needs harp-serial, the serial transport for the Harp client.
+harp = [
+  "harp-protocol>=0.5.0",
+  "harp-device>=0.5.0",
+  "harp-serial>=0.5.0",
+]
+
+[project.scripts]
+vertigate-test = "aeon.vertigate.hwtest:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aeon"]
+
+[tool.ruff]
+line-length = 108

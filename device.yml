@@ -1,20 +1,41 @@
 %YAML 1.1
 ---
+# Schema: stay on draft-02. Checked 2026-09-22 with harp.toolkit 0.3.0.
+# The schema files in harp-tech/protocol declare $id draft-03, but the docs
+# site publishes them under draft-02, so the draft-03 URL returns 404.
+# draft-03 also requires protocolVersion, which the 0.3.0 generator rejects
+# as an unknown property. So draft-02 is the only combination that both
+# validates and generates today.
 # yaml-language-server: $schema=https://harp-tech.org/draft-02/schema/device.json
 device: VertiGate
-whoAmI: 5350
+whoAmI: 3002
 firmwareVersion: "0.1"
 hardwareTargets: "0.1"
 registers:
-  Operation:
+  Control:
+    address: 32
+    access: Write
+    type: U8
+    maskType: ControlFlags
+    volatile: false
+    description: >-
+      Commands for the gate. Writing a bit runs one command. A write with both
+      bits of a pair set is rejected with an error reply. Reading reports the
+      state, not the last command: EnableMotor when the motor is on,
+      EnablePositionEvent when Position events are on, and EnableTelemetryEvent
+      when ServoTelemetry events are on. Stop and Calibrate are commands, so
+      they never appear in a read. The state is kept over a power cycle.
+  TargetPosition:
     address: 33
     access: Write
     type: U8
+    minValue: 0
+    maxValue: 255
     description: >-
-      Commands the gate position. 0 lowers the gate fully down, 255 raises it
-      fully up, and any value in between moves the gate to the corresponding
-      target position.
-  Status:
+      Target position of the gate. 0 lowers the gate fully down, 255 raises it
+      fully up, and any value in between moves the gate to the matching
+      position. One count is 1.2 mm.
+  GateState:
     address: 34
     access: Event
     type: U8
@@ -24,31 +45,118 @@ registers:
     address: 35
     access: Write
     type: U8
+    minValue: 0
+    maxValue: 255
+    defaultValue: 255
+    volatile: false
     description: >-
       Movement speed of the gate, mapped onto the Dynamixel profile velocity.
+      One count is 0.38 mm/s.
   Torque:
     address: 36
     access: Write
     type: U8
     minValue: 0
     maxValue: 127
+    defaultValue: 35
+    volatile: false
     description: >-
-      Torque (current) limit applied to the gate motor. Values are masked to
-      the lower 7 bits (0-127).
-  Offset:
+      Torque limit applied to the gate motor, as a servo current limit. Values
+      are masked to the lower 7 bits. One count is 0.36 kgf·mm. Writing this
+      register switches the motor off and on, so the gate drops for a moment if
+      it is holding a position. It leaves the motor off if MotorState is
+      Disabled.
+  CalibrationOffset:
     address: 37
     access: Write
     type: S8
     minValue: -128
     maxValue: 127
+    defaultValue: 0
+    volatile: false
     description: >-
-      Position offset applied to the fully-raised target position, in
-      motor units.
+      Offset applied to the fully-raised position, to trim the end stop without
+      moving hardware. One count is one encoder count, 25 µm.
+  MotorState:
+    address: 38
+    access: Event
+    type: U8
+    maskType: MotorStatus
+    description: Reports whether the motor holds the gate. DisableMotor and EnableMotor set it.
+  Position:
+    address: 39
+    access: Event
+    type: U8
+    minValue: 0
+    maxValue: 255
+    description: >-
+      Where the gate is now, on the same scale as TargetPosition. Read it at any
+      time. EnablePositionEvent also reports it while the gate moves or homes.
+      Homing measures against the old home until the new one is recorded, so the
+      value steps at the end of a calibration. One count is 1.2 mm.
+  ServoTelemetry:
+    address: 40
+    access: Event
+    type: S16
+    length: 4
+    description: >-
+      Readings from the servo. Read it at any time. EnableTelemetryEvent also
+      reports it once a second.
+    payloadSpec:
+      Voltage:
+        offset: 0
+        description: Supply voltage at the servo, in units of 0.1 V.
+      Temperature:
+        offset: 1
+        description: Servo temperature, in degrees Celsius.
+      Current:
+        offset: 2
+        description: Current through the motor, in mA. Negative means the other direction.
+      HardwareError:
+        offset: 3
+        description: Servo hardware error status. 0 means no fault.
+  RawPosition:
+    address: 41
+    access: Event
+    type: S32
+    length: 2
+    description: >-
+      The two encoder counts that Position is built from. Read it at any time.
+      EnablePositionEvent also reports it beside every Position event. Position
+      is Encoder minus Home, divided by 48 and clamped to 0 to 255, so this pair
+      shows the travel the clamp hides and the step when a calibration records a
+      new home. One count is 25 um.
+    payloadSpec:
+      Encoder:
+        offset: 0
+        description: Position reported by the servo, in raw encoder counts.
+      Home:
+        offset: 1
+        description: The encoder count recorded as the fully-lowered home.
+bitMasks:
+  ControlFlags:
+    description: Commands accepted by the Control register.
+    bits:
+      EnableMotor: {value: 0x01, description: Turn the motor torque on. The gate holds its position.}
+      DisableMotor: {value: 0x02, description: Turn the motor torque off. The gate can be moved by hand.}
+      Stop: {value: 0x04, description: Stop the current movement and hold the position.}
+      Calibrate: {value: 0x08, description: Move the gate to the lower end stop and record it as home.}
+      EnablePositionEvent: {value: 0x10, description: Start sending Position events.}
+      DisablePositionEvent: {value: 0x20, description: Stop sending Position events.}
+      EnableTelemetryEvent: {value: 0x40, description: Start sending ServoTelemetry events.}
+      DisableTelemetryEvent: {value: 0x80, description: Stop sending ServoTelemetry events.}
 groupMasks:
+  MotorStatus:
+    description: Enumerates the states of the gate motor.
+    values:
+      Disabled: {value: 0, description: The motor is off. The gate refuses to move until the motor is enabled.}
+      Enabled: {value: 1, description: The motor is on and holds the gate.}
   GateStatus:
     description: Enumerates the possible states of the gate.
     values:
-      Idle: {value: 0, description: The gate is stationary and not homed to an end position.}
+      Idle: {value: 0, description: The gate is stationary and not at a known end stop.}
       Up: {value: 1, description: The gate is fully raised up.}
       Down: {value: 2, description: The gate is fully lowered down.}
       Moving: {value: 3, description: The gate is moving towards a target position.}
+      Calibrating: {value: 4, description: The gate is moving to the lower end stop to find home.}
+      Error: {value: 0xFF, description: The last movement or calibration failed.}

@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Aeon.VertiGate", "Aeon.VertiGate\Aeon.VertiGate.csproj", "{AD36E0F5-AB3A-47C0-9D68-9EB13A7D07BC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AD36E0F5-AB3A-47C0-9D68-9EB13A7D07BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AD36E0F5-AB3A-47C0-9D68-9EB13A7D07BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AD36E0F5-AB3A-47C0-9D68-9EB13A7D07BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AD36E0F5-AB3A-47C0-9D68-9EB13A7D07BC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

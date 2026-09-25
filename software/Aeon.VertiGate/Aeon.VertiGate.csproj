@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Bonsai Library containing interfaces for data acquisition and control of Aeon VertiGate devices.</Description>
+    <PackageTags>$(PackageTags) Bonsai Rx</PackageTags>
+    <TargetFrameworks>net472;net8.0</TargetFrameworks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Bonsai.Harp" Version="3.6.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- device.yml travels with the package, so a consumer can see the
+         interface description the generated code came from. -->
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../device.yml" />
+  </ItemGroup>
+
+</Project>
