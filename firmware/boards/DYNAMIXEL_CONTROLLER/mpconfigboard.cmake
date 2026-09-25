@@ -1,11 +1,11 @@
-# MicroPython board definition for the NeuroPico (RP2354A, 2 MB of flash in the chip).
+# MicroPython board definition for the Dynamixel Controller (RP2354A, 2 MB of flash in the chip).
 # Build from the MicroPython tree with:
 #   make -C ports/rp2 BOARD_DIR=<this directory>
 
-# The NeuroPico has the same MCU and flash as the Seeed XIAO RP2350. The local
+# The Dynamixel Controller has the same MCU and flash as the Seeed XIAO RP2350. The local
 # header below reuses the SDK board file and pins the flash size explicitly.
 list(APPEND PICO_BOARD_HEADER_DIRS ${MICROPY_BOARD_DIR})
-set(PICO_BOARD "neuropico")
+set(PICO_BOARD "dynamixel_controller")
 set(PICO_PLATFORM "rp2350")
 
 # Flash layout. The file system takes the top 1 MiB, leaving 1 MiB for the

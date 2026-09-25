@@ -29,7 +29,7 @@ A valid image for this board reads like this:
 | Blocks | about 1500 |
 | Size | about 800 kB |
 
-The family matters. The NeuroPico uses an **RP2350**. A UF2 built for an RP2040
+The family matters. The Dynamixel Controller uses an **RP2350**. A UF2 built for an RP2040
 has family `0xE48BFF56`, and the boot loader ignores it.
 
 To read those values from any `.uf2`:
@@ -147,7 +147,7 @@ be installed again.
 
 ## What we measured
 
-Tested on 2026-09-23, on a NeuroPico with MicroPython v1.29.0:
+Tested on 2026-09-23, on a Dynamixel Controller with MicroPython v1.29.0:
 
 | Check | Result |
 | --- | --- |

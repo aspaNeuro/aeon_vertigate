@@ -87,7 +87,7 @@ jobs:
       matrix:
         include:
           - hardware-target: '0.1'
-            board: NEUROPICO
+            board: DYNAMIXEL_CONTROLLER
     name: Build Firmware (hw${{matrix.hardware-target}})
     runs-on: ubuntu-latest
     needs: verify-generated
