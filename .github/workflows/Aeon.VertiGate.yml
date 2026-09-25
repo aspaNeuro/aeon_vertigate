@@ -57,6 +57,12 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
 
+      # ----------------------------------------------------------------------- Validate
+      # device.yml is the source of truth for every generated target, so check it against the published schema before
+      # generating anything. harp.toolkit verify cannot do this: it requires --port and a physical device.
+      - name: Validate device.yml against the published schema
+        run: uvx check-jsonschema --schemafile https://harp-tech.org/draft-02/schema/device.json device.yml
+
       # ----------------------------------------------------------------------- Regenerate
       - name: Generate C# interface
         run: dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate

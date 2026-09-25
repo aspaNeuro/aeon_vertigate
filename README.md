@@ -291,21 +291,23 @@ port:
 dotnet harp.toolkit verify --port COM4 --metadata device.yml --report artifacts/verify.html
 ```
 
-It runs 52 checks and writes an HTML report. It exits with 1 if any check fails,
+It runs 55 checks and writes an HTML report. It exits with 1 if any check fails,
 so it can also run in CI.
 
-Five checks do not pass today. All five are known:
+Last run 2026-09-25: **52 passed, 1 failed, 2 skipped**. All three are known:
 
 | Check | Result | Why |
 | ----- | ------ | --- |
 | `R_CLOCK_CONFIG::LockRefusesTimestampWrite` | Failed | The core stores `CLOCK_LOCK` but does not act on it. A write to the timestamp is accepted while the clock is locked. This is in `micropython-microharp`, not in this firmware. |
-| `DeviceInterfaceSuite::Control` | Error | The register is write only, so `verify` cannot read it back. Issue #6. |
-| `DeviceInterfaceSuite::TargetPosition` | Error | The same. Issue #6. |
 | `ClockTestSuite::SimultaneousWhoAmI` | Skipped | Needs `--clock-port` and a second Harp device as a reference clock. |
 | `ClockTestSuite::PpsEventAlignment` | Skipped | The same. |
 
-So CI must expect exit code 1 until issue #6 is closed and the core gains the
-`CLOCK_LOCK` guard.
+`Control` and `TargetPosition` used to report an error, because `verify` could
+not read them back. Both are readable now and both pass. `Position`,
+`ServoTelemetry` and `RawPosition` pass as well, which is why the count rose
+from 52 to 55.
+
+So CI must expect exit code 1 until the core gains the `CLOCK_LOCK` guard.
 
 One check is worth knowing about: `DeviceInterfaceSuite::GenerateAndCompileInterface`
 generates the C# from `device.yml` and compiles it. So `verify` already tells you
