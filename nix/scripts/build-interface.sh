@@ -19,12 +19,12 @@ eval "$(configure-build)"
 # shellcheck disable=SC2154 # set by the eval above
 : "${CiBuildVersion:?}" "${CiIsForRelease:?}"
 
-generated=(software/dotnet/Aeon.VertiGate src/aeon/vertigate)
+generated=(software/dotnet/Aeon.VertiGate software/python/src/swc/aeon/device/vertigate)
 
 log "Regenerate interfaces"
 snapshot_generated "${generated[@]}"
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
-dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+dotnet harp.toolkit generate interface python device.yml --package --output software/python/src/swc/aeon/device/vertigate
 
 log "Verify generated code is up-to-date"
 verify_generated "${generated[@]}"

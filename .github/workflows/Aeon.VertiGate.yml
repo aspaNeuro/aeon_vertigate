@@ -167,7 +167,7 @@ jobs:
       - name: Regenerate interfaces
         run: |
           dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
-          dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+          dotnet harp.toolkit generate interface python device.yml --package --output software/python/src/swc/aeon/device/vertigate
 
       - name: Verify generated code is up-to-date
         run: |

@@ -1,0 +1,51 @@
+[project]
+name = "swc-aeon-vertigate"
+version = "0.1.0"
+description = "Interface for data acquisition and control of the VertiGate Harp device."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+  "Topic :: System :: Hardware :: Hardware Drivers",
+]
+# The generated interface needs these. harp-protocol and harp-device were split
+# out of harp-python in 0.5.0.
+dependencies = [
+  "harp-protocol>=0.5.0",
+  "harp-device>=0.5.0",
+  "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+# The hardware test talks to a board over the serial transport. The tools for
+# flashing the firmware are not here, they are in firmware/pyproject.toml.
+test = ["harp-serial>=0.5.0"]
+
+[project.scripts]
+vertigate-test = "swc.aeon.device.vertigate.hwtest:main"
+
+[project.urls]
+Repository = "https://github.com/aspaNeuro/aeon_vertigate"
+"Bug Tracker" = "https://github.com/aspaNeuro/aeon_vertigate/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# swc/ and swc/aeon/ and swc/aeon/device/ carry no __init__.py. They are
+# namespace packages, the same way aeon_api lays out swc.aeon.io.
+packages = ["src/swc"]
+
+[dependency-groups]
+# tests/ checks the generated interface against device.yml. It needs no
+# hardware, so CI can run it.
+dev = ["pytest>=8", "pyyaml>=6"]
+
+[tool.ruff]
+line-length = 108

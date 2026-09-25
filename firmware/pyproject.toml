@@ -1,0 +1,20 @@
+# The environment for working on the firmware. It is not published.
+#
+# The rest of the firmware toolchain is pinned: the libraries are submodules at
+# exact commits under lib/, and CI pins the MicroPython version. This pins the
+# host tools the same way, so a new mpremote cannot change how the board is
+# flashed without the lockfile changing too.
+#
+#     uv run --directory firmware mpremote connect COM3 devs
+[project]
+name = "vertigate-firmware-tools"
+version = "0"
+description = "Host tools for flashing and inspecting the VertiGate firmware. Not published."
+requires-python = ">=3.11"
+dependencies = [
+  "mpremote>=1.24",
+  "pyserial>=3.5",
+]
+
+[tool.uv]
+package = false
