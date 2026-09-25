@@ -62,7 +62,7 @@ jobs:
 
       # ----------------------------------------------------------------------- Regenerate
       - name: Regenerate firmware version module
-        run: uv run tools/firmware_version.py
+        run: uv run firmware/tools/firmware_version.py
 
       - name: Verify generated code is up-to-date
         run: |

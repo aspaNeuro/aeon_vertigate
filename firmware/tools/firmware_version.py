@@ -6,7 +6,7 @@
 
 The firmware reports WhoAmI and the firmware and hardware versions in its core registers. This script copies them out of device.yml so the two cannot drift. Run it after changing device.yml and commit the result:
 
-    uv run tools/firmware_version.py
+    uv run firmware/tools/firmware_version.py
 
 CI runs the same command and fails if the committed file is out of date.
 """
@@ -16,7 +16,8 @@ import sys
 
 import yaml
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
+# firmware/tools/ -> the repository root.
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEVICE_YML = ROOT / "device.yml"
 OUTPUT = ROOT / "firmware" / "vertigate" / "_version.py"
 
@@ -24,7 +25,7 @@ OUTPUT = ROOT / "firmware" / "vertigate" / "_version.py"
 # it as CoreVersion. The draft-02 schema of device.yml has no field for it.
 HARP_VERSION = (1, 13)
 
-TEMPLATE = '''"""Device identity. Generated from device.yml by tools/firmware_version.py. Do not edit."""
+TEMPLATE = '''"""Device identity. Generated from device.yml by firmware/tools/firmware_version.py. Do not edit."""
 
 WHO_AM_I = {who_am_i}
 FW_VERSION = ({fw[0]}, {fw[1]})

@@ -185,7 +185,7 @@ Generate first, then pack:
 ```bash
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
-uv run tools/firmware_version.py
+uv run firmware/tools/firmware_version.py
 dotnet pack software/Aeon.VertiGate.sln -c Release
 ```
 
@@ -229,7 +229,7 @@ Then, from the repository root:
 ```bash
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
-uv run tools/firmware_version.py
+uv run firmware/tools/firmware_version.py
 ```
 
 Commit the result. Do not edit the generated files by hand. They say so at the
