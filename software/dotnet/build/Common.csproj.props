@@ -20,7 +20,7 @@
 
     <!-- Build to central artifacts folder instead of scattering bin and obj throughout the solution tree -->
     <UseArtifactsOutput>true</UseArtifactsOutput>
-    <ArtifactsPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../artifacts'))</ArtifactsPath>
+    <ArtifactsPath>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../artifacts'))</ArtifactsPath>
 
     <!--
       Odd things can happen when WSL and Windows share the same output directories (IE: when building from a single clone of the repo which is shared between both.)
@@ -41,7 +41,7 @@
     <PackageLicenseSourcePath>$(MSBuildThisFileDirectory)../LICENSE</PackageLicenseSourcePath>
 
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageReadmeSourcePath>$(MSBuildThisFileDirectory)../../docs/README.md</PackageReadmeSourcePath>
+    <PackageReadmeSourcePath>$(MSBuildThisFileDirectory)../../../docs/README.md</PackageReadmeSourcePath>
     <PackageReadmeSourcePath Condition="Exists('$(MSBuildThisFileDirectory)README.nuget.md')">$(MSBuildThisFileDirectory)README.nuget.md</PackageReadmeSourcePath>
     <PackageReadmeSourcePath Condition="Exists('$(MSBuildProjectDirectory)\README.md')">$(MSBuildProjectDirectory)\README.md</PackageReadmeSourcePath>
     <PackageReadmeSourcePath Condition="Exists('$(MSBuildProjectDirectory)\README.nuget.md')">$(MSBuildProjectDirectory)\README.nuget.md</PackageReadmeSourcePath>

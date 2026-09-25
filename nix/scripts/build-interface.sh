@@ -19,25 +19,25 @@ eval "$(configure-build)"
 # shellcheck disable=SC2154 # set by the eval above
 : "${CiBuildVersion:?}" "${CiIsForRelease:?}"
 
-generated=(software/Aeon.VertiGate src/aeon/vertigate)
+generated=(software/dotnet/Aeon.VertiGate src/aeon/vertigate)
 
 log "Regenerate interfaces"
 snapshot_generated "${generated[@]}"
-dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
+dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
 
 log "Verify generated code is up-to-date"
 verify_generated "${generated[@]}"
 
 log "Restore"
-dotnet restore software
+dotnet restore software/dotnet
 
 for configuration in "${configurations[@]}"; do
   log "Build ($configuration)"
-  dotnet build software --no-restore --configuration "$configuration"
+  dotnet build software/dotnet --no-restore --configuration "$configuration"
 
   log "Pack ($configuration)"
-  dotnet pack software --no-restore --no-build --configuration "$configuration"
+  dotnet pack software/dotnet --no-restore --no-build --configuration "$configuration"
 done
 
 log "Collect NuGet packages"

@@ -13,7 +13,7 @@
   <ItemGroup>
     <!-- device.yml travels with the package, so a consumer can see the
          interface description the generated code came from. -->
-    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../device.yml" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)../../../device.yml" />
   </ItemGroup>
 
 </Project>

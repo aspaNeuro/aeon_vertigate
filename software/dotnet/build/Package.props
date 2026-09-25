@@ -7,6 +7,6 @@
     <Copyright>Copyright © University College London and Contributors</Copyright>
 
     <!-- This repository keeps one LICENSE at the root, not one per folder. -->
-    <PackageLicenseSourcePath>$(MSBuildThisFileDirectory)../../LICENSE</PackageLicenseSourcePath>
+    <PackageLicenseSourcePath>$(MSBuildThisFileDirectory)../../../LICENSE</PackageLicenseSourcePath>
   </PropertyGroup>
 </Project>
