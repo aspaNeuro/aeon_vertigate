@@ -64,6 +64,11 @@ from aeon.vertigate.device import (
     ControlFlags,
     GateState,
     GateStatus,
+    MotorState,
+    MotorStatus,
+    Position,
+    RawPosition,
+    ServoTelemetry,
     Speed,
     TargetPosition,
     Torque,
@@ -75,6 +80,10 @@ METADATA = Path(__file__).resolve().parents[3] / "device.yml"
 
 REBOOT_SECONDS = 9
 CAL_TIMEOUT_S = 12.0
+
+# POS_SCALE in firmware/vertigate/gate.py. The test recomputes Position from
+# RawPosition, so a change on one side without the other shows up as a failure.
+POS_SCALE = 48
 
 # Failures the test reports as a FAIL instead of stopping on. DeviceError is
 # only raised if the device is opened with raise_on_error, which this test does
@@ -115,9 +124,23 @@ def on_gate_state(msg):
     print(f"  event  GateState = {int(msg.payload)} ({status_name(msg.payload)})")
 
 
+# Every event seen, by address, so a check can count them afterwards.
+EVENTS = {}
+
+
 def on_other_event(msg):
-    if msg.address != GateState.address:
-        print(f"  event  address {msg.address} payload {msg.payload_bytes.hex()}")
+    EVENTS.setdefault(msg.address, []).append(msg)
+    # Position and RawPosition arrive every 50 ms while the gate moves. Printing
+    # them buries the checks, so they are counted instead.
+    if msg.address in (GateState.address, Position.address, RawPosition.address):
+        return
+    print(f"  event  address {msg.address} payload {msg.payload_bytes.hex()}")
+
+
+def scale_position(encoder, home):
+    """Position from a RawPosition pair, the way the firmware computes it."""
+    pos = (int(encoder) - int(home)) // POS_SCALE
+    return 0 if pos < 0 else 255 if pos > 255 else pos
 
 
 def connect(port):
@@ -357,10 +380,88 @@ def main():
         else:
             print("  no servo: skipping the Calibrate settings check")
 
-        if args.no_reboot:
-            print("5. Non-volatile settings: skipped (--no-reboot)")
+        print("5. The motor latch refuses movement")
+        results.append(check(accepted(write(dev, Control, ControlFlags.DISABLE_MOTOR)),
+                             "DisableMotor write accepted"))
+        motor = read(dev, MotorState)
+        results.append(check(motor == MotorStatus.DISABLED,
+                             f"MotorState = {motor}, expected Disabled"))
+        # The latch is a state, so both a move and a calibration must be refused
+        # for as long as it is set.
+        results.append(check(rejected(write(dev, TargetPosition, 128)),
+                             "TargetPosition is refused while the motor is disabled"))
+        results.append(check(rejected(write(dev, Control, ControlFlags.CALIBRATE)),
+                             "Calibrate is refused while the motor is disabled"))
+        results.append(check(accepted(write(dev, Control, ControlFlags.ENABLE_MOTOR)),
+                             "EnableMotor write accepted"))
+        motor = read(dev, MotorState)
+        results.append(check(motor == MotorStatus.ENABLED,
+                             f"MotorState = {motor}, expected Enabled"))
+
+        print("6. Control reads back as state")
+        write(dev, Control, ControlFlags.ENABLE_POSITION_EVENT)
+        state_bits = read(dev, Control)
+        results.append(check(state_bits is not None
+                             and bool(state_bits & ControlFlags.ENABLE_POSITION_EVENT),
+                             f"Control = {state_bits!r}, EnablePositionEvent set after enabling"))
+        # Stop and Calibrate are commands. A read must never report them.
+        results.append(check(state_bits is not None
+                             and not (state_bits & (ControlFlags.STOP | ControlFlags.CALIBRATE)),
+                             "Control does not report Stop or Calibrate"))
+        write(dev, Control, ControlFlags.DISABLE_POSITION_EVENT)
+        state_bits = read(dev, Control)
+        results.append(check(state_bits is not None
+                             and not (state_bits & ControlFlags.ENABLE_POSITION_EVENT),
+                             f"Control = {state_bits!r}, EnablePositionEvent clear after disabling"))
+
+        print("7. Position, RawPosition and ServoTelemetry")
+        pos = read(dev, Position)
+        raw = read(dev, RawPosition)
+        if servo:
+            results.append(check(pos is not None and 0 <= pos <= 255,
+                                 f"Position read = {pos}"))
+            results.append(check(raw is not None,
+                                 f"RawPosition read = "
+                                 f"{(int(raw.encoder), int(raw.home)) if raw else None}"))
+            if pos is not None and raw is not None:
+                # The firmware computes both from one servo read. They must agree.
+                expected = scale_position(raw.encoder, raw.home)
+                results.append(check(abs(int(pos) - expected) <= 1,
+                                     f"Position {pos} matches RawPosition scaled, {expected}"))
+            tel = read(dev, ServoTelemetry)
+            results.append(check(tel is not None, "ServoTelemetry read answered"))
+            if tel is not None:
+                print(f"  voltage {int(tel.voltage) / 10:.1f} V  "
+                      f"temperature {int(tel.temperature)} C  "
+                      f"current {int(tel.current)} mA  "
+                      f"fault 0x{int(tel.hardware_error):02x}")
+                results.append(check(int(tel.voltage) > 0,
+                                     f"ServoTelemetry voltage = {int(tel.voltage) / 10:.1f} V"))
+                results.append(check(int(tel.hardware_error) == 0,
+                                     f"ServoTelemetry hardware error = "
+                                     f"0x{int(tel.hardware_error):02x}, expected 0"))
+
+            print("   streaming while the gate moves")
+            EVENTS.pop(Position.address, None)
+            EVENTS.pop(RawPosition.address, None)
+            write(dev, Control, ControlFlags.ENABLE_POSITION_EVENT)
+            write(dev, TargetPosition, 0 if read(dev, GateState) == GateStatus.UP else 255)
+            time.sleep(1.0)
+            write(dev, Control, ControlFlags.STOP)
+            write(dev, Control, ControlFlags.DISABLE_POSITION_EVENT)
+            n_pos = len(EVENTS.get(Position.address, []))
+            n_raw = len(EVENTS.get(RawPosition.address, []))
+            # 50 ms period, so a second of movement is about 20 of each.
+            results.append(check(n_pos >= 5, f"Position events while moving = {n_pos}"))
+            results.append(check(n_raw == n_pos,
+                                 f"RawPosition events = {n_raw}, one per Position event"))
         else:
-            print("5. Non-volatile settings survive a reboot")
+            print("  no servo: skipping the Position and ServoTelemetry checks")
+
+        if args.no_reboot:
+            print("8. Non-volatile settings: skipped (--no-reboot)")
+        else:
+            print("8. Non-volatile settings survive a reboot")
             print(f"   this reboots the board four times, about {4 * REBOOT_SECONDS} seconds")
             dev = check_settings(dev, args.port, schema, results)
     finally:

@@ -322,6 +322,9 @@ whether `device.yml` still produces a valid interface.
 | `0x24`  | Torque    | R/W       | Current limit. 0–127, default 35. Unit: 0.36 kgf·mm                            |
 | `0x25`  | CalibrationOffset | R/W | Offset for the fully-up position. −128 to +127, default 0. Unit: 25 μm       |
 | `0x26`  | MotorState | R + Event | `0x00` Disabled, `0x01` Enabled                                               |
+| `0x27`  | Position  | R + Event | Where the gate is now, on the TargetPosition scale. Unit: 1.2 mm              |
+| `0x28`  | ServoTelemetry | R + Event | Voltage, temperature, current and the fault status of the servo. 4 x S16 |
+| `0x29`  | RawPosition | R + Event | The two encoder counts that make Position: `Encoder` and `Home`. 2 x S32     |
 
 Writing a bit of **Control** runs one command. A write with both bits of a pair set (for example
 `EnableMotor` and `DisableMotor`) is rejected with an error reply.
@@ -332,18 +335,60 @@ Writing a bit of **Control** runs one command. A write with both bits of a pair 
 | `0x02` | DisableMotor            | Turn the motor off and stop any movement. The gate refuses to move until you enable the motor again. |
 | `0x04` | Stop                    | Stop the current movement and hold the position.          |
 | `0x08` | Calibrate               | Move the gate to the lower end stop and record it as home. |
-| `0x10` | EnablePositionEvent     | Reserved for the Position register.                       |
-| `0x20` | DisablePositionEvent    | Reserved for the Position register.                       |
-| `0x40` | EnableTelemetryEvent    | Reserved for the ServoTelemetry register.                 |
-| `0x80` | DisableTelemetryEvent   | Reserved for the ServoTelemetry register.                 |
+| `0x10` | EnablePositionEvent     | Start sending Position and RawPosition events.            |
+| `0x20` | DisablePositionEvent    | Stop sending Position and RawPosition events.             |
+| `0x40` | EnableTelemetryEvent    | Start sending ServoTelemetry events.                      |
+| `0x80` | DisableTelemetryEvent   | Stop sending ServoTelemetry events.                       |
 
-The gate homes itself at boot. If the servo does not answer, GateState reports `Error`. Write
-`Calibrate` to try again after fixing the connection.
+**A read of Control reports the state, not the last command.** The device sets these bits:
 
-**DisableMotor is a state, not a one-off command.** While **MotorState** (`0x26`) reads
-`Disabled`, a write to **TargetPosition** or a `Calibrate` command is refused with an error
-reply, and the gate does not move. Writes to **Speed** and **Torque** are accepted, and they
-leave the motor off. Only `EnableMotor` clears the state.
+- `EnableMotor`, while the motor is on
+- `EnablePositionEvent`, while the Position stream runs
+- `EnableTelemetryEvent`, while the ServoTelemetry stream runs
+
+Stop and Calibrate are commands. A read never reports them.
+
+Control is non-volatile. The enabled streams and the motor state stay the same when the power
+goes off and on.
+
+The gate homes itself at boot. The gate does not home if the stored state has the motor off.
+If the servo does not answer, GateState reports `Error`. Correct the connection, then write
+`Calibrate`.
+
+**DisableMotor is a state, not a single command.** The device refuses a write to
+**TargetPosition** while **MotorState** (`0x26`) reads `Disabled`. The device also refuses a
+`Calibrate` command. Each refusal is an error reply, and the gate does not move. The device
+accepts a write to **Speed** or **Torque**, and the motor stays off. Only `EnableMotor` clears
+the state.
+
+### Event streams
+
+Three registers report the position of the gate and the readings of the servo. You can read
+all three at any time. The `Control` bits start and stop the event streams.
+
+| Stream | Bit | Rate | Contents |
+| ------ | --- | ---- | -------- |
+| Position and RawPosition | `0x10` | 50 ms, while the gate moves or homes | The gate position |
+| ServoTelemetry | `0x40` | 1 s | Voltage in 0.1 V, temperature in C, current in mA, servo fault status |
+
+**Position has the range 0 to 255.** The firmware computes Position from RawPosition:
+
+```
+Position = (Encoder - Home) / 48, limited to 0 to 255
+```
+
+One encoder count is 25 um. One Position step is 48 counts, or 1.2 mm. The full travel is
+12000 counts, or 300 mm.
+
+**The range limit hides two things. RawPosition shows them.** The gate rests about 400 counts
+below `Home`. Position therefore reads 0 for the last 10 mm of travel. A calibration also
+replaces `Home`. The reference moves, but Position does not change. RawPosition reports
+`Encoder` and `Home` as two values, so you can see both.
+
+To watch a calibration, set `EnablePositionEvent` and then write `Calibrate`. `Encoder`
+decreases while the gate goes down. `Home` stays at the same value. At the end of the
+calibration, `Home` changes once to the new value. The size of that change is the error in the
+previous home.
 
 ### Calibration guidelines
 
