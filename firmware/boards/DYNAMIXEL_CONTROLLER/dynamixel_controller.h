@@ -1,4 +1,4 @@
-// SDK board header for the NeuroPico. The board is electrically a Seeed XIAO
+// SDK board header for the Dynamixel Controller. The board is electrically a Seeed XIAO
 // RP2350 as far as the SDK is concerned: RP2350A, 2 MB QSPI flash, W25Q080
 // boot stage 2. Only the pin usage differs, and MicroPython does not need that here.
 #include "boards/seeed_xiao_rp2350.h"

@@ -23,7 +23,7 @@ TBC
 
 ### Firmware installation
 
-Each [release](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/releases) attaches one firmware image, `VertiGate-fw<x.y>-harp1.13-hw<x.y>-ass0.uf2`. It is a MicroPython build for the NeuroPico with the VertiGate application and its libraries frozen inside. Flashing it is the whole installation.
+Each [release](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/releases) attaches one firmware image, `VertiGate-fw<x.y>-harp1.13-hw<x.y>-ass0.uf2`. It is a MicroPython build for the Dynamixel Controller with the VertiGate application and its libraries frozen inside. Flashing it is the whole installation.
 
 1. **Enter the bootloader.** Hold BOOTSEL and press reset (or plug the board in while holding
    BOOTSEL). A drive named `RP2350` appears.
@@ -41,7 +41,7 @@ To update, flash the new `.uf2` the same way. The settings file and the error lo
 
 The image runs its frozen `main.py` even when a `main.py` is on the file system, so it cannot be used to try out changes. For development, run the Python files from the file system of a stock MicroPython build.
 
-> **Which MicroPython build.** The NeuroPico uses an RP2354A with **2 MB** of flash inside the chip.
+> **Which MicroPython build.** The Dynamixel Controller uses an RP2354A with **2 MB** of flash inside the chip.
 > Do not use the `RPI_PICO2` build. It assumes 4 MB and its file system wraps around onto the
 > firmware. The board works for a while, then freezes or corrupts its files. Use the
 > **`SEEED_XIAO_RP2350`** build, **v1.29.0 or later**. It is made for an RP2350A with 2 MB and has
@@ -241,18 +241,18 @@ The release image is a MicroPython build with the application frozen in. The inp
 
 - `vertigate/`: the application.
 - `lib/`: `micropython-microharp` and `micropython-dynamixel` as git submodules, pinned to the versions the application is tested with. Clone with `git clone --recursive`, or run `git submodule update --init` in an existing clone.
-- `boards/NEUROPICO/`: the MicroPython board definition. It reuses the Seeed XIAO RP2350 board support, pins the flash size to 2 MB and the file system to 1 MiB, and names the modules to freeze in `manifest.py`.
+- `boards/DYNAMIXEL_CONTROLLER/`: the MicroPython board definition. It reuses the Seeed XIAO RP2350 board support, pins the flash size to 2 MB and the file system to 1 MiB, and names the modules to freeze in `manifest.py`.
 
 CI builds the image on every push and attaches it to releases. To build it locally on Linux, with `gcc-arm-none-eabi` 13, `cmake` and `picotool` installed (GCC 15 rejects a warning in the bundled mbedtls, so use the GCC 13 toolchain CI uses):
 
 ```bash
 git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git
-make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/NEUROPICO submodules
+make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/DYNAMIXEL_CONTROLLER submodules
 make -C micropython/mpy-cross
-make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/NEUROPICO
+make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/DYNAMIXEL_CONTROLLER
 ```
 
-The image is `micropython/ports/rp2/build-NEUROPICO/firmware.uf2`. Use the same MicroPython version as CI, set in the workflow file.
+The image is `micropython/ports/rp2/build-DYNAMIXEL_CONTROLLER/firmware.uf2`. Use the same MicroPython version as CI, set in the workflow file.
 
 The release tag must match `firmwareVersion` in `device.yml` in its major and minor parts. CI checks this and stops the release if they differ.
 

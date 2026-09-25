@@ -1,12 +1,12 @@
 
 # Mirrors the build-firmware job. Builds a MicroPython image for one board with the application frozen in and names it like the release asset.
 #
-#   BOARD            board directory under firmware/boards, default NEUROPICO (hardware target 0.1)
+#   BOARD            board directory under firmware/boards, default DYNAMIXEL_CONTROLLER (hardware target 0.1)
 #   MICROPYTHON_DIR  where the MicroPython tree is cloned, default artifacts/micropython
 #
 # The MicroPython version is read from the workflow file so the two cannot drift. The clone and its submodules are kept between runs.
 
-board=${BOARD:-NEUROPICO}
+board=${BOARD:-DYNAMIXEL_CONTROLLER}
 board_dir="$root/firmware/boards/$board"
 [ -d "$board_dir" ] || die "no board directory at $board_dir"
 
