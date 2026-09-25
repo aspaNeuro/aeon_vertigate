@@ -52,27 +52,28 @@ The image runs its frozen `main.py` even when a `main.py` is on the file system,
    [SEEED_XIAO_RP2350-20260824-v1.29.0.uf2](https://micropython.org/resources/firmware/SEEED_XIAO_RP2350-20260824-v1.29.0.uf2)
    to the drive (newer releases: [micropython.org/download/SEEED_XIAO_RP2350](https://micropython.org/download/SEEED_XIAO_RP2350/)).
    The board reboots and a COM port appears.
-2. **Install the host tools.** Install [uv](https://docs.astral.sh/uv/), then run from the repository root:
+2. **Install the host tools.** Install [uv](https://docs.astral.sh/uv/), then create the
+   firmware environment:
 
    ```bash
-   uv sync
+   uv sync --directory firmware
    ```
 
-   This creates a `.venv` with `mpremote` and `pyserial`. Add `--all-extras` to also install the
-   packages the generated Python interface needs.
+   It holds `mpremote` and `pyserial`, pinned in `firmware/uv.lock`. The Python interface is a
+   separate environment in `software/python/`, and is only needed to read data from a device.
 3. **Install the libraries.** Replace `COM3` with your port. The versions are the ones pinned as
    submodules under `firmware/lib/`, which is what the release image is built from:
 
    ```bash
-   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel@846451ee2db58569f1aae4c8527ef053a9df291a
-   uv run mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp@v2.1.0
+   uv run --directory firmware mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel@846451ee2db58569f1aae4c8527ef053a9df291a
+   uv run --directory firmware mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp@v2.1.0
    ```
 
 4. **Copy the firmware.** From the repository root, run:
 
    ```bash
-   uv run mpremote connect COM3 cp -r firmware/vertigate/. :
-   uv run mpremote connect COM3 reset
+   uv run --directory firmware mpremote connect COM3 cp -r firmware/vertigate/. :
+   uv run --directory firmware mpremote connect COM3 reset
    ```
 
 The firmware keeps the REPL on its own port, so `mpremote` can reach the board while the
@@ -81,8 +82,8 @@ which raises `KeyboardInterrupt` inside the device loop, and the Harp port disap
 the files, then reset:
 
 ```bash
-uv run mpremote connect COM3 resume cp -r firmware/vertigate/. :
-uv run mpremote connect COM3 reset
+uv run --directory firmware mpremote connect COM3 resume cp -r firmware/vertigate/. :
+uv run --directory firmware mpremote connect COM3 reset
 ```
 
 The Harp port comes back about 10 seconds after the reset. If it does not come back at all,
@@ -92,7 +93,7 @@ resets in a row.
 If the device does not start, read the log it writes on the board:
 
 ```bash
-uv run mpremote connect COM3 resume cat :error.log
+uv run --directory firmware mpremote connect COM3 resume cat :error.log
 ```
 
 ### Testing
@@ -103,8 +104,7 @@ the device against the Harp specification. Both use the Harp port.
 **The hardware test.** With the board connected and the Harp port known (for example `COM4`):
 
 ```bash
-uv sync --all-extras
-uv run vertigate-test --port COM4
+uv run --directory software/python --extra test vertigate-test --port COM4
 ```
 
 It runs 28 checks and prints `PASS` or `FAIL` for each one. It takes about a minute, because
@@ -184,7 +184,7 @@ Generate first, then pack:
 
 ```bash
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
-dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+dotnet harp.toolkit generate interface python device.yml --package \n  --output software/python/src/swc/aeon/device/vertigate
 uv run firmware/tools/firmware_version.py
 dotnet pack software/dotnet/Aeon.VertiGate.sln -c Release
 ```
@@ -207,7 +207,7 @@ Start Bonsai again. It installs the new package from
 
 - **Bonsai**, in `software/dotnet/Aeon.VertiGate/`. It gives one typed operator per
   register, instead of raw addresses and payload types.
-- **Python**, in `src/aeon/vertigate/device.py`. It works with
+- **Python**, in `software/python/src/swc/aeon/device/vertigate/`. It works with
   [harp-python](https://github.com/harp-tech/python).
 - **Firmware identity**, in `firmware/vertigate/_version.py`. It holds the WhoAmI and the
   firmware and hardware versions the device reports on connect.
@@ -228,7 +228,7 @@ Then, from the repository root:
 
 ```bash
 dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
-dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
+dotnet harp.toolkit generate interface python device.yml --package \n  --output software/python/src/swc/aeon/device/vertigate
 uv run firmware/tools/firmware_version.py
 ```
 
@@ -269,15 +269,17 @@ version the pinned Bonsai environment expects, so a build is all Bonsai needs.
 
 ### Using the Python interface
 
+The package is `swc-aeon-vertigate`, in `software/python/`. From a checkout:
+
 ```bash
-uv sync --all-extras
+uv sync --directory software/python --all-extras
 ```
 
 ```python
-from aeon.vertigate import device
+from swc.aeon.device import vertigate
 
-print(device.WHO_AM_I)    # 3002
-print(device.REGISTER_MAP)
+print(vertigate.WHO_AM_I)    # 3002
+print(vertigate.REGISTER_MAP)
 ```
 
 ### Checking the device against the specification

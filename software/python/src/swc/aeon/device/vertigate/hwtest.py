@@ -58,8 +58,8 @@ from harp.device.schema import parse_device_schema
 from harp.protocol import HarpParseError
 from harp.serial import open_device
 
-from aeon.vertigate import device as vertigate
-from aeon.vertigate.device import (
+from swc.aeon.device import vertigate
+from swc.aeon.device.vertigate import (
     Control,
     ControlFlags,
     GateState,
@@ -76,7 +76,10 @@ from aeon.vertigate.device import (
 
 # device.yml, read for what the generated interface leaves out: which registers
 # are non-volatile, and their default, minimum and maximum.
-METADATA = Path(__file__).resolve().parents[3] / "device.yml"
+# Seven levels from src/swc/aeon/device/vertigate/ up to the repository
+# root. Only correct when running from a checkout. An installed copy has
+# no device.yml beside it, so --metadata is the way in.
+METADATA = Path(__file__).resolve().parents[7] / "device.yml"
 
 REBOOT_SECONDS = 9
 CAL_TIMEOUT_S = 12.0

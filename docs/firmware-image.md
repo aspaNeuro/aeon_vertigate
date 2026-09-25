@@ -126,7 +126,7 @@ that only the new code has:
 ```bash
 uv run --all-extras python -c "
 from harp.serial import open_device
-from aeon.vertigate.device import MotorState
+from swc.aeon.device.vertigate import MotorState
 with open_device(port='COM4', raise_on_error=False) as dev:
     print(dev.read(MotorState).payload)
 "
