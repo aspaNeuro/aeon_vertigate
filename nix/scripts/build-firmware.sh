@@ -24,7 +24,7 @@ eval "$(configure-build)"
 
 log "Regenerate firmware version module"
 snapshot_generated firmware/vertigate/_version.py
-uv run tools/firmware_version.py
+uv run firmware/tools/firmware_version.py
 
 log "Verify generated code is up-to-date"
 verify_generated firmware/vertigate/_version.py
