@@ -166,7 +166,7 @@ jobs:
       # ----------------------------------------------------------------------- Regenerate
       - name: Regenerate interfaces
         run: |
-          dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
+          dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
           dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
 
       - name: Verify generated code is up-to-date
@@ -176,14 +176,14 @@ jobs:
 
       # ----------------------------------------------------------------------- Build interface package
       - name: Restore
-        run: dotnet restore software
+        run: dotnet restore software/dotnet
 
       - name: Build
-        run: dotnet build software --no-restore --configuration ${{matrix.configuration}}
+        run: dotnet build software/dotnet --no-restore --configuration ${{matrix.configuration}}
 
       - name: Pack
         id: pack
-        run: dotnet pack software --no-restore --no-build --configuration ${{matrix.configuration}}
+        run: dotnet pack software/dotnet --no-restore --no-build --configuration ${{matrix.configuration}}
 
       # ----------------------------------------------------------------------- Collect artifacts
       - name: Collect NuGet packages

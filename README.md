@@ -170,7 +170,7 @@ so Bonsai finds it.
 not find `Aeon.VertiGate`:
 
 ```bash
-dotnet pack software/Aeon.VertiGate.sln -c Release
+dotnet pack software/dotnet/Aeon.VertiGate.sln -c Release
 ```
 
 #### If you change `device.yml`
@@ -183,10 +183,10 @@ not match its own operators. Nothing warns you.
 Generate first, then pack:
 
 ```bash
-dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
+dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
 uv run firmware/tools/firmware_version.py
-dotnet pack software/Aeon.VertiGate.sln -c Release
+dotnet pack software/dotnet/Aeon.VertiGate.sln -c Release
 ```
 
 Every local build has the same version, `42.42.42-dev0`. Bonsai keeps a copy of
@@ -205,7 +205,7 @@ Start Bonsai again. It installs the new package from
 
 `device.yml` describes every register. Two interfaces and one firmware module are generated from it:
 
-- **Bonsai**, in `software/Aeon.VertiGate/`. It gives one typed operator per
+- **Bonsai**, in `software/dotnet/Aeon.VertiGate/`. It gives one typed operator per
   register, instead of raw addresses and payload types.
 - **Python**, in `src/aeon/vertigate/device.py`. It works with
   [harp-python](https://github.com/harp-tech/python).
@@ -227,7 +227,7 @@ dotnet tool restore
 Then, from the repository root:
 
 ```bash
-dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/Aeon.VertiGate
+dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
 dotnet harp.toolkit generate interface python device.yml --output src/aeon/vertigate
 uv run firmware/tools/firmware_version.py
 ```
@@ -259,8 +259,8 @@ The release tag must match `firmwareVersion` in `device.yml` in its major and mi
 ### Building the Bonsai package
 
 ```bash
-dotnet build software/Aeon.VertiGate.sln -c Release
-dotnet pack software/Aeon.VertiGate.sln -c Release
+dotnet build software/dotnet/Aeon.VertiGate.sln -c Release
+dotnet pack software/dotnet/Aeon.VertiGate.sln -c Release
 ```
 
 The package lands in `artifacts/package/release/`. A local build is always
