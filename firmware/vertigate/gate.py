@@ -40,6 +40,21 @@ CAL_SETTLE_MS = const(200)
 CAL_TIMEOUT_MS = const(10_000)
 CAL_HOME_OFFSET = const(400)  # Small offset so the platform is fully lowered
 
+def clamp_torque(val):
+    """The torque the servo is given, from what the host asked for."""
+    return val & TRQ_LIM
+
+
+def clamp_speed(val):
+    """The speed the servo is given, from what the host asked for."""
+    return val & VEL_LIM
+
+
+def clamp_offset(val):
+    """The calibration offset the gate keeps, from what the host asked for."""
+    return max(min(val, POS_OFFSET_MAX), POS_OFFSET_MIN)
+
+
 def scale_position(encoder, home):
     """Turn a pair of encoder counts into a TargetPosition step, 0 to 255.
 
@@ -109,7 +124,7 @@ class Gate(Dynamixel):
 
     @torque.setter
     def torque(self, val):
-        val &= TRQ_LIM
+        val = clamp_torque(val)
         self.torque_enabled = False
         self.current_limit = val
         # Do not switch the motor on if the host disabled it.
@@ -121,7 +136,7 @@ class Gate(Dynamixel):
 
     @speed.setter
     def speed(self, vel):
-        vel &= VEL_LIM
+        vel = clamp_speed(vel)
         self.torque_enabled = False
         self.profile_velocity = vel + VEL_OFFSET
         # Do not switch the motor on if the host disabled it.
@@ -133,8 +148,7 @@ class Gate(Dynamixel):
 
     @offset.setter
     def offset(self, val):
-        val = max(min(val, POS_OFFSET_MAX), POS_OFFSET_MIN)
-        self._offset = val
+        self._offset = clamp_offset(val)
 
     @property
     def max_pos(self):

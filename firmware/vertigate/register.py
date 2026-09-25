@@ -7,7 +7,8 @@ from microharp.registers import R_DEVICE_NAME, R_RESET_DEV
 from microharp.device import DEVICE_NAME_LEN
 from micropython import const
 import settings
-from gate import CALIBRATING, Gate, TRQ_DEFAULT, VEL_DEFAULT
+from gate import (CALIBRATING, Gate, TRQ_DEFAULT, VEL_DEFAULT,
+                  clamp_offset, clamp_speed, clamp_torque)
 
 
 ADDR_CONTROL = 0x20
@@ -258,29 +259,35 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
 
     @device.on_write(address=ADDR_SPD, payload_type=PT_U8, name="Speed")
     async def _speed(reg, payload):
-        speed = payload[0]
-        reg.storage[0] = speed
+        # The reply and the stored value carry the value the gate applies, not
+        # the value the host asked for. Reading it back from the servo instead
+        # does not work: current_limit is an EEPROM item, and a read straight
+        # after a write can still return the old value.
+        speed = clamp_speed(payload[0])
         try:
             gate.speed = speed
         except Exception:
             return ERR_SERVO
+        reg.storage[0] = speed
         _store(ADDR_SPD, speed)
 
     @device.on_write(address=ADDR_TRQ, payload_type=PT_U8, name="Torque")
     async def _torque(reg, payload):
-        torque = payload[0]
-        reg.storage[0] = torque
+        # Masked to seven bits, so a write of 200 is applied as 72 and the
+        # reply says 72.
+        torque = clamp_torque(payload[0])
         try:
             gate.torque = torque
         except Exception:
             return ERR_SERVO
+        reg.storage[0] = torque
         _store(ADDR_TRQ, torque)
 
     @device.on_write(address=ADDR_CALIBRATION_OFFSET, payload_type=PT_S8, name="CalibrationOffset")
     async def _calibration_offset(reg, payload):
-        offset = struct.unpack_from("<b", payload)[0]
-        reg.storage[0] = payload[0]
+        offset = clamp_offset(struct.unpack_from("<b", payload)[0])
         gate.offset = offset
+        struct.pack_into("<b", reg.storage, 0, offset)
         _store(ADDR_CALIBRATION_OFFSET, offset)
 
     # ------------------------------------------------------------------

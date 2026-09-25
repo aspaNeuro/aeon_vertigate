@@ -85,6 +85,9 @@ CAL_TIMEOUT_S = 12.0
 # RawPosition, so a change on one side without the other shows up as a failure.
 POS_SCALE = 48
 
+# device.yml declares Torque maxValue 127, so a write above it is masked.
+TRQ_DEFAULT = 35
+
 # Failures the test reports as a FAIL instead of stopping on. DeviceError is
 # only raised if the device is opened with raise_on_error, which this test does
 # not, but catching it keeps the helpers safe either way.
@@ -213,6 +216,16 @@ def wait_status(dev, wanted, timeout):
     return False
 
 
+def wait_stopped(dev, timeout):
+    """Wait until the gate is no longer Moving."""
+    deadline = time.perf_counter() + timeout
+    while time.perf_counter() < deadline:
+        if read(dev, GateState) != GateStatus.MOVING:
+            return True
+        time.sleep(0.1)
+    return False
+
+
 def print_identity(dev):
     """Read what Bonsai reads when the Device node connects, and print it the way
     the Bonsai console does. Returns WhoAmI and the device name."""
@@ -301,12 +314,71 @@ def check_settings(dev, port, schema, results):
     return dev
 
 
+# Targets around the top of the declared range. 240 and 248 are reachable and
+# act as the control. See issue #31.
+SCALE_TARGETS = (240, 248, 250, 251, 253, 255)
+
+
+def check_scale(dev, _results):
+    """Drive the gate to each target near the top and report where it settles.
+
+    `move()` computes `POS_SCALE * target + home_pos` and limits the goal to
+    `home_pos + LENGTH`. POS_SCALE is 48 and LENGTH is 12000, so 48 * 250 is
+    exactly LENGTH and every target above 250 gives the same goal. This section
+    measures that on the device instead of arguing about it.
+    """
+    out = []
+    settled = {}
+    print("   target   encoder      home     delta   steps   Position")
+    for target in SCALE_TARGETS:
+        # Start from the bottom each time, so one target cannot leave the gate
+        # where the next one would not have to move.
+        write(dev, TargetPosition, 0)
+        wait_status(dev, GateStatus.DOWN, CAL_TIMEOUT_S)
+        time.sleep(0.4)
+        write(dev, TargetPosition, target)
+        if not wait_stopped(dev, CAL_TIMEOUT_S):
+            out.append(check(False, f"target {target} stopped within the timeout"))
+            continue
+        time.sleep(0.8)
+        raw = read(dev, RawPosition)
+        pos = read(dev, Position)
+        if raw is None or pos is None:
+            out.append(check(False, f"target {target} answered a RawPosition read"))
+            continue
+        delta = int(raw.encoder) - int(raw.home)
+        settled[target] = delta
+        print(f"     {target:3d}  {int(raw.encoder):>9d} {int(raw.home):>9d} "
+              f"{delta:>9d}  {delta / POS_SCALE:>6.1f}   {int(pos):>3d}")
+
+    # A reachable target must land on its own count, within one step of play.
+    for target in (240, 248, 250):
+        if target in settled:
+            out.append(check(abs(settled[target] - POS_SCALE * target) <= POS_SCALE,
+                             f"target {target} settled on {settled.get(target)}, "
+                             f"expected about {POS_SCALE * target}"))
+    # Everything above the ceiling lands in the same place. While issue #31 is
+    # open this is the documented behaviour, so the check records it.
+    above = [settled[t] for t in (251, 253, 255) if t in settled]
+    if len(above) == 3:
+        out.append(check(len(set(above)) == 1,
+                         f"targets 251, 253 and 255 all settle on {above[0]}, "
+                         f"which is issue #31" if len(set(above)) == 1
+                         else f"targets 251, 253 and 255 settled on {above}"))
+    write(dev, TargetPosition, 0)
+    wait_status(dev, GateStatus.DOWN, CAL_TIMEOUT_S)
+    return out
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--port", default="COM21" if sys.platform == "win32" else "/dev/ttyACM0")
     p.add_argument("--metadata", type=Path, default=METADATA, help="device.yml to test against")
     p.add_argument("--no-reboot", action="store_true",
                    help="skip the non-volatile settings checks, which reboot the board")
+    p.add_argument("--scale", action="store_true",
+                   help="also measure the top of the TargetPosition range, see issue #31. "
+                        "Adds about two minutes of gate movement")
     args = p.parse_args()
 
     if not args.metadata.is_file():
@@ -398,6 +470,17 @@ def main():
         results.append(check(motor == MotorStatus.ENABLED,
                              f"MotorState = {motor}, expected Enabled"))
 
+        print("5b. A write reply reports the value that was applied")
+        # Torque is declared maxValue 127 and the firmware masks to seven bits.
+        # The reply, a later read and the stored value must all say 72, not 200.
+        reply = write(dev, Torque, 200)
+        results.append(check(accepted(reply) and int(reply.payload) == 72,
+                             f"Torque write of 200 replies "
+                             f"{int(reply.payload) if accepted(reply) else reply}, expected 72"))
+        back = read(dev, Torque)
+        results.append(check(back == 72, f"Torque reads back {back}, expected 72"))
+        write(dev, Torque, TRQ_DEFAULT)
+
         print("6. Control reads back as state")
         write(dev, Control, ControlFlags.ENABLE_POSITION_EVENT)
         state_bits = read(dev, Control)
@@ -453,7 +536,7 @@ def main():
             n_raw = len(EVENTS.get(RawPosition.address, []))
             # 50 ms period, so a second of movement is about 20 of each.
             results.append(check(n_pos >= 5, f"Position events while moving = {n_pos}"))
-            results.append(check(n_raw == n_pos,
+            results.append(check(n_pos > 0 and n_raw == n_pos,
                                  f"RawPosition events = {n_raw}, one per Position event"))
         else:
             print("  no servo: skipping the Position and ServoTelemetry checks")
@@ -464,6 +547,12 @@ def main():
             print("8. Non-volatile settings survive a reboot")
             print(f"   this reboots the board four times, about {4 * REBOOT_SECONDS} seconds")
             dev = check_settings(dev, args.port, schema, results)
+        if args.scale and servo:
+            print("9. The top of the TargetPosition range")
+            print("   this moves the gate to each target and back, about two minutes")
+            results.extend(check_scale(dev, results))
+        elif args.scale:
+            print("9. The top of the TargetPosition range: skipped, no servo")
     finally:
         dev.close()
 
