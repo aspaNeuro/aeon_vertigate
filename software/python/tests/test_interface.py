@@ -51,3 +51,19 @@ def test_the_hardware_test_imports():
     import hwtest
 
     assert callable(hwtest.main)
+
+
+def test_the_licence_ships_with_the_package():
+    """The packaged licence must exist and match the one at the root.
+
+    setuptools resolves `license-files` inside the project directory only, so
+    `software/python/LICENSE` is a copy. A path outside the project is accepted
+    and then dropped: the build still succeeds and the wheel ships with no
+    licence text and no warning. Deleting the copy fails the same way.
+    """
+    project = Path(__file__).resolve().parents[1]
+    packaged = project / "LICENSE"
+    root = Path(__file__).resolve().parents[3] / "LICENSE"
+
+    assert packaged.is_file(), "the wheel would ship with no licence text"
+    assert packaged.read_text(encoding="utf-8") == root.read_text(encoding="utf-8")
