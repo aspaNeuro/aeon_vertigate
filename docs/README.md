@@ -1,7 +1,7 @@
 # VertiGate
 
 [![GitHub release](https://img.shields.io/github/v/release/SainsburyWellcomeCentre/aeon_vertigate?style=flat-square&cacheSeconds=3600)](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/releases)
-[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg?style=flat-square)](../LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/SainsburyWellcomeCentre/aeon_vertigate?style=flat-square)](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/issues)
 
 A [Harp](https://harp-tech.org/) device that controls a vertical gate. A Dynamixel XM430-W210 servo moves the gate.
@@ -29,7 +29,7 @@ Each [release](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/release
    BOOTSEL). A drive named `RP2350` appears.
 2. **Erase the file system, first time only.** Do not use `flash_nuke.uf2`. That file is an
    RP2040 image, and this board is an RP2350, so the boot loader ignores it. Clear the file
-   system from the REPL instead, as [docs/firmware-image.md](docs/firmware-image.md)
+   system from the REPL instead, as [docs/firmware-image.md](firmware-image.md)
    describes. A board straight from the factory needs nothing here.
 3. **Flash the image.** Copy the `.uf2` from the release to the drive. The board reboots.
 4. **Check the ports.** The board shows **two** COM ports. The first is the MicroPython REPL.
@@ -415,7 +415,7 @@ Running a released firmware image needs no software beyond Bonsai. The rest is f
 
 **Sainsbury Wellcome Centre code, firmware, and software is released under the [BSD 3-Clause License](https://opensource.org/license/bsd-3-clause).**
 
-> For the full legal text, see [LICENSE](LICENSE).
+> For the full legal text, see [LICENSE](../LICENSE).
 
 ## 🤝 Contributing
 
