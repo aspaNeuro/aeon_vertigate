@@ -177,6 +177,12 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
             state |= CTRL_ENABLE_TELEMETRY_EVENT
         return state
 
+    def _save_control_state(reg):
+        """Put the state in the register and on the flash."""
+        state = _control_state()
+        reg.storage[0] = state
+        _store(ADDR_CONTROL, state)
+
     @device.on_read(address=ADDR_CONTROL, payload_type=PT_U8, name="Control")
     async def _control_read(reg):
         reg.storage[0] = _control_state()
@@ -224,7 +230,12 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
             if cmd & CTRL_ENABLE_MOTOR:
                 gate.enable()
         except Exception:
-            # The servo did not answer. Reply with an error, keep running.
+            # The servo did not answer. The motor latch is what the host asked
+            # for, not what the servo did, so store it before reporting the
+            # error. A servo fault is the case where it matters most: the host
+            # disables the motor because something is wrong, and a reboot must
+            # not undo that.
+            _save_control_state(reg)
             return ERR_SERVO
         if cmd & CTRL_CALIBRATE:
             gate.start_calibration()
@@ -238,9 +249,7 @@ def setup_register_handlers(device: HarpDevice, gate: Gate):
             gate.telemetry_events = False
         # Keep the state, not the command. Stop and Calibrate change nothing
         # here, so pressing them repeatedly never touches the flash.
-        state = _control_state()
-        reg.storage[0] = state
-        _store(ADDR_CONTROL, state)
+        _save_control_state(reg)
 
     @device.on_write(address=ADDR_TARGET_POSITION, payload_type=PT_U8, name="TargetPosition")
     async def _target_position(reg, payload):
