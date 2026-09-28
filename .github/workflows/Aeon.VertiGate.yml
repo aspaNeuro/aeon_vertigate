@@ -57,22 +57,6 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
 
-      # ----------------------------------------------------------------------- Validate
-      # device.yml is the source of truth for every generated target, so check it against the published schema before
-      # generating anything. harp.toolkit verify cannot do this: it requires --port and a physical device.
-      #
-      # The validator is a dev dependency of software/python, which already checks device.yml in its tests, so uv.lock
-      # pins it and its whole dependency tree. A dependency group is not part of the wheel, so the published package is
-      # unaffected.
-      #
-      # --project picks the project and leaves the working directory alone, so device.yml stays repo-relative. --directory
-      # would move the working directory as well and the file would not be found.
-      - name: Restore the Python environment
-        run: uv sync --project software/python --group dev
-
-      - name: Validate device.yml against the published schema
-        run: uv run --project software/python --no-sync check-jsonschema --schemafile https://harp-tech.org/draft-02/schema/device.json device.yml
-
       # ----------------------------------------------------------------------- Regenerate
       - name: Generate C# interface
         run: dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
@@ -200,6 +184,8 @@ jobs:
     name: Build Interface (${{matrix.platform.name}} ${{matrix.configuration}})
     runs-on: ${{matrix.platform.os}}
     needs: verify-generated
+    outputs:
+      need-workflow-image-render: ${{steps.configure-build.outputs.need-workflow-image-render}}
     steps:
       # ----------------------------------------------------------------------- Checkout
       - name: Checkout
@@ -239,6 +225,13 @@ jobs:
           if-no-files-found: error
           path: artifacts/package/${{matrix.configuration}}/**
 
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        if: matrix.collect-packages && steps.pack.outcome == 'success' && github.event_name == 'release'
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} artifacts/package/${{matrix.configuration}}/** --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
+
   # =====================================================================================================================================================================
   # Build Python
   # =====================================================================================================================================================================
@@ -250,6 +243,9 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.11', '3.12', '3.13']
+        include:
+          - python-version: '3.13'
+            collect-packages: true
     name: Build Python (${{matrix.python-version}})
     runs-on: ubuntu-latest
     needs: verify-generated
@@ -279,7 +275,26 @@ jobs:
         run: uv run --no-sync pytest tests/
 
       - name: Build
-        run: uv build
+        id: build
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{github.event.release.tag_name}}
+        run: uv build --wheel
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect Python packages
+        uses: actions/upload-artifact@v7
+        if: matrix.collect-packages && steps.build.outcome == 'success' && always()
+        with:
+          name: PythonPackages
+          if-no-files-found: error
+          path: dist/*
+
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        if: matrix.collect-packages && steps.build.outcome == 'success' && github.event_name == 'release'
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} dist/* --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
 
   # =====================================================================================================================================================================
   # Publish packages to GitHub
@@ -292,7 +307,7 @@ jobs:
   publish-github:
     name: Publish packages to GitHub
     runs-on: ubuntu-latest
-    needs: build-interface
+    needs: [build-interface, build-python]
     permissions:
       # Needed to attach files to releases
       contents: write
@@ -312,6 +327,14 @@ jobs:
         with:
           name: Packages
           path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Download Python packages
+      - name: Download built Python packages
+        uses: actions/download-artifact@v8
+        with:
+          name: PythonPackages
+          path: dist/
+
 
       # ----------------------------------------------------------------------- Upload release assets
       - name: Upload release assets
@@ -340,10 +363,8 @@ jobs:
     runs-on: ubuntu-latest
     environment: public-release
     # A release ships the package and the firmware image together, so both must have built.
-    needs: [build-firmware, build-interface]
-    # Only the upstream repository publishes to NuGet.org. A fork that publishes a release would otherwise claim the
-    # Aeon.VertiGate name on a public feed. A fork still gets its firmware image and its GitHub Packages push.
-    if: github.event_name == 'release' && github.repository == 'SainsburyWellcomeCentre/aeon_vertigate'
+    needs: [build-firmware, build-interface, build-python]
+    if: github.event_name == 'release'
     steps:
       # ----------------------------------------------------------------------- Set up .NET
       - name: Set up .NET
@@ -364,3 +385,220 @@ jobs:
         env:
           # This is a workaround for https://github.com/NuGet/Home/issues/9775
           DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
+  # =====================================================================================================================================================================
+  # Publish to PyPI
+  #  ___      _    _ _    _      _         ___      ___ ___ 
+  # | _ \_  _| |__| (_)__| |_   | |_ ___  | _ \_  _| _ \_ _|
+  # |  _/ || | '_ \ | (_-< ' \  |  _/ _ \ |  _/ || |  _/| | 
+  # |_|  \_,_|_.__/_|_/__/_||_|  \__\___/ |_|  \_, |_| |___|
+  #                                            |__/         
+  # =====================================================================================================================================================================
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [build-interface, build-python]
+    if: github.event_name == 'release'
+    environment: pypi
+    permissions:
+      # Needed by uv publish to exchange a token with PyPI trusted publishing
+      id-token: write
+      # Needed to attach the distributions to the release
+      contents: write
+    defaults:
+      run:
+        working-directory: software/python
+    steps:
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: PythonPackages
+          path: dist/
+
+      - name: Verify the release tag was applied
+        run: |
+          if ls dist/*.dev* >/dev/null 2>&1; then
+            echo "::error::Built a development version, so setuptools-scm did not apply the release tag."
+            ls -1 dist/
+            exit 1
+          fi
+
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} dist/* --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
+
+      # ----------------------------------------------------------------------- Publish
+      - name: Publish to PyPI
+        run: uv publish
+  # =====================================================================================================================================================================
+  # Build documentation
+  #  ___      _ _    _      _                            _        _   _
+  # | _ )_  _(_) |__| |  __| |___  __ _  _ _ __  ___ _ _| |_ __ _| |_(_)___ _ _
+  # | _ \ || | | / _` | / _` / _ \/ _| || | '  \/ -_) ' \  _/ _` |  _| / _ \ ' \
+  # |___/\_,_|_|_\__,_| \__,_\___/\__|\_,_|_|_|_\___|_||_\__\__,_|\__|_\___/_||_|
+  # =====================================================================================================================================================================
+  build-documentation:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    needs: verify-generated
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      - name: Set up .NET tools
+        run: dotnet tool restore
+
+      # ----------------------------------------------------------------------- Configure build
+      - name: Configure build
+        id: configure-build
+        uses: bonsai-rx/configure-build@v2
+
+      # ----------------------------------------------------------------------- Restore
+      - name: Restore
+        run: dotnet restore software/dotnet
+
+      # ----------------------------------------------------------------------- Build metadata
+      - name: Build metadata
+        id: build-metadata
+        run: dotnet docfx metadata docs/docfx.json --noRestore
+
+      # ----------------------------------------------------------------------- Build documentation
+      - name: Build documentation
+        id: build-documentation
+        run: dotnet docfx build docs/docfx.json
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect documentation metadata
+        uses: actions/upload-artifact@v7
+        if: steps.build-metadata.outcome == 'success' && always()
+        with:
+          name: DocumentationMetadata
+          if-no-files-found: error
+          path: artifacts/docs/api/
+
+      - name: Collect documentation artifact
+        uses: actions/upload-artifact@v7
+        if: steps.build-documentation.outcome == 'success' && always()
+        with:
+          name: DocumentationWebsite
+          if-no-files-found: error
+          path: artifacts/docs/site/
+
+  # =====================================================================================================================================================================
+  # Render workflow images
+  #  ___             _                          _    __ _              _
+  # | _ \___ _ _  __| |___ _ _  __ __ _____ _ _| |__/ _| |_____ __ __ (_)_ __  __ _ __ _ ___ ___
+  # |   / -_) ' \/ _` / -_) '_| \ V  V / _ \ '_| / /  _| / _ \ V  V / | | '  \/ _` / _` / -_|_-<
+  # |_|_\___|_||_\__,_\___|_|    \_/\_/\___/_| |_\_\_| |_\___/\_/\_/  |_|_|_|_\__,_\__, \___/__/
+  #                                                                                |___/
+  # =====================================================================================================================================================================
+  workflow-images:
+    name: Render workflow images
+    runs-on: windows-latest
+    needs: build-interface
+    if: needs.build-interface.outputs.need-workflow-image-render == 'true'
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download packages for rendering
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Set up Bonsai environments
+      - name: Set up Bonsai environments
+        uses: bonsai-rx/setup-bonsai@v2
+        with:
+          environment-paths: '**/.bonsai/'
+          inject-packages: artifacts/packages/*.nupkg
+
+      # ----------------------------------------------------------------------- Render
+      - name: Render images
+        id: render
+        run: pwsh ./docs/export-images.ps1 -OutputFolder artifacts/docs/site/ -Verbose
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect images
+        uses: actions/upload-artifact@v7
+        if: steps.render.outcome == 'success' && always()
+        with:
+          name: DocumentationWorkflowImages
+          if-no-files-found: error
+          path: artifacts/docs/site/
+
+  # =====================================================================================================================================================================
+  # Publish documentation
+  #  ___      _    _ _    _         _                            _        _   _
+  # | _ \_  _| |__| (_)__| |_    __| |___  __ _  _ _ __  ___ _ _| |_ __ _| |_(_)___ _ _
+  # |  _/ || | '_ \ | (_-< ' \  / _` / _ \/ _| || | '  \/ -_) ' \  _/ _` |  _| / _ \ ' \
+  # |_|  \_,_|_.__/_|_/__/_||_| \__,_\___/\__|\_,_|_|_|_\___|_||_\__\__,_|\__|_\___/_||_|
+  # =====================================================================================================================================================================
+  publish-documentation:
+    name: Publish documentation
+    runs-on: ubuntu-latest
+    # Publishing is not strictly necessary here, but if we're going to do a public release we want to wait to publish the docs until it goes out
+    needs: [build-documentation, workflow-images, publish-packages-nuget-org, publish-pypi]
+    permissions:
+      # Both required by actions/deploy-pages
+      pages: write
+      id-token: write
+    environment:
+      # Intentionally not using the "default" github-pages environment as it's not compatible with this workflow
+      name: documentation-website
+      url: ${{steps.publish.outputs.page_url}}
+    # Only run if the workflow isn't dying and build-documentation was successful and either A) we're releasing or B) we have continuous deployment enabled
+    if: |
+      !cancelled() && !failure() && needs.build-documentation.result == 'success'
+      && (github.event_name == 'release'
+        || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-documentation == 'true')
+        || (vars.CONTINUOUS_DOCUMENTATION && github.event_name != 'pull_request')
+      )
+    steps:
+      # ----------------------------------------------------------------------- Download documentation website components
+      # It is intentional that we use two independent download steps here as it ensures that workflow images are permitted
+      # to overwrite any conflicts in the docfx output but not the other way around.
+      - name: Download documentation website
+        uses: actions/download-artifact@v8
+        with:
+          name: DocumentationWebsite
+
+      - name: Download workflow images
+        if: ${{needs.workflow-images.result == 'success'}}
+        uses: actions/download-artifact@v8
+        with:
+          name: DocumentationWorkflowImages
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Upload final documentation website artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: '.'
+
+      # ----------------------------------------------------------------------- Publish to GitHub Pages
+      - name: Publish to GitHub Pages
+        id: publish
+        uses: actions/deploy-pages@v5
