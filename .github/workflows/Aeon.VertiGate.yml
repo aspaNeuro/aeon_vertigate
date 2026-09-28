@@ -60,8 +60,18 @@ jobs:
       # ----------------------------------------------------------------------- Validate
       # device.yml is the source of truth for every generated target, so check it against the published schema before
       # generating anything. harp.toolkit verify cannot do this: it requires --port and a physical device.
+      #
+      # The validator is a dev dependency of software/python, which already checks device.yml in its tests, so uv.lock
+      # pins it and its whole dependency tree. A dependency group is not part of the wheel, so the published package is
+      # unaffected.
+      #
+      # --project picks the project and leaves the working directory alone, so device.yml stays repo-relative. --directory
+      # would move the working directory as well and the file would not be found.
+      - name: Restore the Python environment
+        run: uv sync --project software/python --group dev
+
       - name: Validate device.yml against the published schema
-        run: uvx check-jsonschema --schemafile https://harp-tech.org/draft-02/schema/device.json device.yml
+        run: uv run --project software/python --no-sync check-jsonschema --schemafile https://harp-tech.org/draft-02/schema/device.json device.yml
 
       # ----------------------------------------------------------------------- Regenerate
       - name: Generate C# interface

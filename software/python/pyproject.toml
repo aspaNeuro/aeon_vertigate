@@ -52,7 +52,7 @@ include = ["swc*"]
 #
 #     uv run --group dev pytest tests/
 #     uv run --group dev python tests/hwtest.py --port COM4
-dev = ["pytest>=8", "pyyaml>=6", "harp-serial>=0.5.0"]
+dev = ["pytest>=8", "pyyaml>=6", "harp-serial>=0.5.0", "check-jsonschema>=0.33"]
 
 [tool.ruff]
 line-length = 108
