@@ -1,6 +1,6 @@
 [project]
 name = "swc-aeon-vertigate"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Interface for data acquisition and control of the VertiGate Harp device."
 readme = "README.md"
 license = "BSD-3-Clause"
@@ -34,13 +34,23 @@ Repository = "https://github.com/aspaNeuro/aeon_vertigate"
 "Bug Tracker" = "https://github.com/aspaNeuro/aeon_vertigate/issues"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-# swc/ and swc/aeon/ and swc/aeon/device/ carry no __init__.py. They are
-# namespace packages, the same way aeon_api lays out swc.aeon.io.
-packages = ["src/swc"]
+[tool.setuptools_scm]
+# harp-tech/protocol#145 asks for one version per repository, so the version
+# comes from the git tag and not from this file. root is the repository root,
+# two levels up. The match pattern accepts only a semver tag, so a firmware or
+# hardware tag is never mistaken for a release. Our tags carry a v prefix,
+# which device.behavior's do not.
+root = "../.."
+git_describe_command = "git describe --dirty --tags --long --match v[0-9]*.[0-9]*.[0-9]*"
+
+[tool.setuptools.packages.find]
+# swc/, swc/aeon/ and swc/aeon/device/ carry no __init__.py. They are namespace
+# packages, the same way aeon_api lays out swc.aeon.io.
+where = ["src"]
+include = ["swc*"]
 
 [dependency-groups]
 # tests/ checks the generated interface against device.yml. It needs no

@@ -250,6 +250,10 @@ jobs:
       # ----------------------------------------------------------------------- Checkout
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # setuptools-scm derives the package version from the repository tags,
+          # so the full history is needed. A shallow clone has none.
+          fetch-depth: 0
 
       # ----------------------------------------------------------------------- Set up tools
       - name: Set up uv
