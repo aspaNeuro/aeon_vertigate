@@ -263,7 +263,7 @@ jobs:
 
       # ----------------------------------------------------------------------- Build and test the interface
       - name: Restore
-        run: uv sync --group dev --extra test --python ${{matrix.python-version}}
+        run: uv sync --group dev --python ${{matrix.python-version}}
 
       - name: Test
         run: uv run --no-sync pytest tests/

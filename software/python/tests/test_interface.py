@@ -45,9 +45,9 @@ def test_every_declared_register_is_in_the_map(schema):
         assert vertigate.REGISTER_MAP[address].__name__ == name
 
 
-def test_the_hardware_test_entry_point_imports():
-    # The entry point is published in pyproject.toml, so a broken import here is
-    # a broken console script for anyone who installs the package.
-    from swc.aeon.device.vertigate import hwtest
+def test_the_hardware_test_imports():
+    # hwtest.py is a script in this folder, not part of the package, so nothing
+    # else would catch a broken import in it until someone ran it on a board.
+    import hwtest
 
     assert callable(hwtest.main)

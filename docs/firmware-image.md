@@ -104,7 +104,7 @@ This removes the firmware files, `lib/`, `settings.json` and `error.log`.
 ## Checking the result
 
 ```bash
-uv run --all-extras vertigate-test --port COM4
+uv run --directory software/python --group dev python tests/hwtest.py --port COM4
 dotnet harp.toolkit verify --port COM4 --metadata device.yml --report artifacts/verify.html
 ```
 

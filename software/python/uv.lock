@@ -490,13 +490,9 @@ dependencies = [
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 
-[package.optional-dependencies]
-test = [
-    { name = "harp-serial" },
-]
-
 [package.dev-dependencies]
 dev = [
+    { name = "harp-serial" },
     { name = "pytest" },
     { name = "pyyaml" },
 ]
@@ -505,13 +501,12 @@ dev = [
 requires-dist = [
     { name = "harp-device", specifier = ">=0.5.0" },
     { name = "harp-protocol", specifier = ">=0.5.0" },
-    { name = "harp-serial", marker = "extra == 'test'", specifier = ">=0.5.0" },
     { name = "numpy", specifier = ">=1.24" },
 ]
-provides-extras = ["test"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "harp-serial", specifier = ">=0.5.0" },
     { name = "pytest", specifier = ">=8" },
     { name = "pyyaml", specifier = ">=6" },
 ]

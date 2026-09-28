@@ -76,10 +76,8 @@ from swc.aeon.device.vertigate import (
 
 # device.yml, read for what the generated interface leaves out: which registers
 # are non-volatile, and their default, minimum and maximum.
-# Seven levels from src/swc/aeon/device/vertigate/ up to the repository
-# root. Only correct when running from a checkout. An installed copy has
-# no device.yml beside it, so --metadata is the way in.
-METADATA = Path(__file__).resolve().parents[7] / "device.yml"
+# tests/ -> software/python/ -> software/ -> the repository root.
+METADATA = Path(__file__).resolve().parents[3] / "device.yml"
 
 REBOOT_SECONDS = 9
 CAL_TIMEOUT_S = 12.0

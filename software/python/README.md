@@ -13,10 +13,11 @@ same way as [`aeon_api`](https://github.com/SainsburyWellcomeCentre/aeon_api).
 ## The hardware test
 
 ```bash
-uv run --extra test vertigate-test --port COM4
+uv run --group dev python tests/hwtest.py --port COM4
 ```
 
-It checks the device against `device.yml` on a live board: the identity, the
+`tests/hwtest.py` is a script, not part of the package. It checks the device
+against `device.yml` on a live board: the identity, the
 register map, the motor latch, the event streams and the non-volatile settings.
 Pass `--scale` to also measure the top of the `TargetPosition` range, and
 `--no-reboot` to skip the checks that restart the board.

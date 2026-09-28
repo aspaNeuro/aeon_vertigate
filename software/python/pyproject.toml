@@ -21,14 +21,6 @@ dependencies = [
   "numpy>=1.24",
 ]
 
-[project.optional-dependencies]
-# The hardware test talks to a board over the serial transport. The tools for
-# flashing the firmware are not here, they are in firmware/pyproject.toml.
-test = ["harp-serial>=0.5.0"]
-
-[project.scripts]
-vertigate-test = "swc.aeon.device.vertigate.hwtest:main"
-
 [project.urls]
 Repository = "https://github.com/aspaNeuro/aeon_vertigate"
 "Bug Tracker" = "https://github.com/aspaNeuro/aeon_vertigate/issues"
@@ -53,9 +45,14 @@ where = ["src"]
 include = ["swc*"]
 
 [dependency-groups]
-# tests/ checks the generated interface against device.yml. It needs no
-# hardware, so CI can run it.
-dev = ["pytest>=8", "pyyaml>=6"]
+# Everything tests/ needs, and nothing the published package needs. A
+# dependency group is not part of the wheel, unlike an optional extra, so a
+# consumer of the interface never sees these. harp-serial is the serial
+# transport the hardware test talks to a board over.
+#
+#     uv run --group dev pytest tests/
+#     uv run --group dev python tests/hwtest.py --port COM4
+dev = ["pytest>=8", "pyyaml>=6", "harp-serial>=0.5.0"]
 
 [tool.ruff]
 line-length = 108

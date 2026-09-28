@@ -104,7 +104,7 @@ the device against the Harp specification. Both use the Harp port.
 **The hardware test.** With the board connected and the Harp port known (for example `COM4`):
 
 ```bash
-uv run --directory software/python --extra test vertigate-test --port COM4
+uv run --directory software/python --group dev python tests/hwtest.py --port COM4
 ```
 
 It runs 28 checks and prints `PASS` or `FAIL` for each one. It takes about a minute, because
