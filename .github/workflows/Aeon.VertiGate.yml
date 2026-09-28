@@ -331,7 +331,9 @@ jobs:
     environment: public-release
     # A release ships the package and the firmware image together, so both must have built.
     needs: [build-firmware, build-interface]
-    if: github.event_name == 'release'
+    # Only the upstream repository publishes to NuGet.org. A fork that publishes a release would otherwise claim the
+    # Aeon.VertiGate name on a public feed. A fork still gets its firmware image and its GitHub Packages push.
+    if: github.event_name == 'release' && github.repository == 'SainsburyWellcomeCentre/aeon_vertigate'
     steps:
       # ----------------------------------------------------------------------- Set up .NET
       - name: Set up .NET
