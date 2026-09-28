@@ -491,9 +491,9 @@ namespace Aeon.VertiGate
     }
 
     /// <summary>
-    /// Represents a register that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+    /// Represents a register that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.
     /// </summary>
-    [Description("Target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.")]
+    [Description("Target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.")]
     public partial class TargetPosition
     {
         /// <summary>
@@ -1069,9 +1069,9 @@ namespace Aeon.VertiGate
     }
 
     /// <summary>
-    /// Represents a register that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+    /// Represents a register that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.
     /// </summary>
-    [Description("Where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.")]
+    [Description("Where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.")]
     public partial class Position
     {
         /// <summary>
@@ -1500,18 +1500,18 @@ namespace Aeon.VertiGate
 
     /// <summary>
     /// Represents an operator that creates a message payload
-    /// that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+    /// that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.
     /// </summary>
     [DisplayName("TargetPositionPayload")]
-    [Description("Creates a message payload that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.")]
+    [Description("Creates a message payload that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.")]
     public partial class CreateTargetPositionPayload
     {
         /// <summary>
-        /// Gets or sets the value that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+        /// Gets or sets the value that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.
         /// </summary>
         [Range(min: 0, max: 255)]
         [Editor(DesignTypes.NumericUpDownEditor, DesignTypes.UITypeEditor)]
-        [Description("The value that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.")]
+        [Description("The value that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.")]
         public byte TargetPosition { get; set; } = 0;
 
         /// <summary>
@@ -1524,7 +1524,7 @@ namespace Aeon.VertiGate
         }
 
         /// <summary>
-        /// Creates a message that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+        /// Creates a message that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.
         /// </summary>
         /// <param name="messageType">Specifies the type of the created message.</param>
         /// <returns>A new message for the TargetPosition register.</returns>
@@ -1536,14 +1536,14 @@ namespace Aeon.VertiGate
 
     /// <summary>
     /// Represents an operator that creates a timestamped message payload
-    /// that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+    /// that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.
     /// </summary>
     [DisplayName("TimestampedTargetPositionPayload")]
-    [Description("Creates a timestamped message payload that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.")]
+    [Description("Creates a timestamped message payload that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.")]
     public partial class CreateTimestampedTargetPositionPayload : CreateTargetPositionPayload
     {
         /// <summary>
-        /// Creates a timestamped message that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm.
+        /// Creates a timestamped message that target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250.
         /// </summary>
         /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
         /// <param name="messageType">Specifies the type of the created message.</param>
@@ -1832,18 +1832,18 @@ namespace Aeon.VertiGate
 
     /// <summary>
     /// Represents an operator that creates a message payload
-    /// that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+    /// that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.
     /// </summary>
     [DisplayName("PositionPayload")]
-    [Description("Creates a message payload that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.")]
+    [Description("Creates a message payload that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.")]
     public partial class CreatePositionPayload
     {
         /// <summary>
-        /// Gets or sets the value that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+        /// Gets or sets the value that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.
         /// </summary>
         [Range(min: 0, max: 255)]
         [Editor(DesignTypes.NumericUpDownEditor, DesignTypes.UITypeEditor)]
-        [Description("The value that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.")]
+        [Description("The value that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.")]
         public byte Position { get; set; } = 0;
 
         /// <summary>
@@ -1856,7 +1856,7 @@ namespace Aeon.VertiGate
         }
 
         /// <summary>
-        /// Creates a message that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+        /// Creates a message that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.
         /// </summary>
         /// <param name="messageType">Specifies the type of the created message.</param>
         /// <returns>A new message for the Position register.</returns>
@@ -1868,14 +1868,14 @@ namespace Aeon.VertiGate
 
     /// <summary>
     /// Represents an operator that creates a timestamped message payload
-    /// that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+    /// that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.
     /// </summary>
     [DisplayName("TimestampedPositionPayload")]
-    [Description("Creates a timestamped message payload that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.")]
+    [Description("Creates a timestamped message payload that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.")]
     public partial class CreateTimestampedPositionPayload : CreatePositionPayload
     {
         /// <summary>
-        /// Creates a timestamped message that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm.
+        /// Creates a timestamped message that where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition.
         /// </summary>
         /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
         /// <param name="messageType">Specifies the type of the created message.</param>

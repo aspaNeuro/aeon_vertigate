@@ -161,7 +161,7 @@ class Control(RegisterBase[ControlFlags]):
 
 
 class TargetPosition(RegisterU8):
-    """Target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm."""
+    """Target position of the gate. 0 lowers the gate fully down, 255 raises it fully up, and any value in between moves the gate to the matching position. One count is 1.2 mm. The gate stops at step 250. A write of 251 to 255 moves the gate to the same place as 250."""
 
     address: ClassVar[int] = 33
 
@@ -201,7 +201,7 @@ class MotorState(RegisterBase[MotorStatus]):
 
 
 class Position(RegisterU8):
-    """Where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm."""
+    """Where the gate is now, on the same scale as TargetPosition. Read it at any time. EnablePositionEvent also reports it while the gate moves or homes. Homing measures against the old home until the new one is recorded, so the value steps at the end of a calibration. One count is 1.2 mm. The value stops at 250, like TargetPosition."""
 
     address: ClassVar[int] = 39
 

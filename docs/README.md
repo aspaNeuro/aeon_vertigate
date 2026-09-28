@@ -320,7 +320,7 @@ whether `device.yml` still produces a valid interface.
 | Address | Name      | Access    | Description                                                                    |
 | ------- | --------- | --------- | ------------------------------------------------------------------------------ |
 | `0x20`  | Control   | W         | Commands, one per bit. See the table below.                                    |
-| `0x21`  | TargetPosition | W    | Target position. 0 = down, 255 = up, 1–254 = in between. Unit: 1.2 mm          |
+| `0x21`  | TargetPosition | W    | Target position. 0 = down, 255 = up, 1–254 = in between. Unit: 1.2 mm. 250 is the highest step the gate reaches, see below |
 | `0x22`  | GateState | R + Event | `0x00` Idle, `0x01` Up, `0x02` Down, `0x03` Moving, `0x04` Calibrating, `0xFF` Error |
 | `0x23`  | Speed     | R/W       | Profile velocity. 0–255, default 255. Unit: 0.38 mm/s                          |
 | `0x24`  | Torque    | R/W       | Current limit. 0–127, default 35. Unit: 0.36 kgf·mm                            |
@@ -364,6 +364,14 @@ If the servo does not answer, GateState reports `Error`. Correct the connection,
 `Calibrate` command. Each refusal is an error reply, and the gate does not move. The device
 accepts a write to **Speed** or **Torque**, and the motor stays off. Only `EnableMotor` clears
 the state.
+
+### The top of the range
+
+`TargetPosition` and `Position` are declared 0 to 255. The gate stops at 250. The travel is 12000 encoder counts and one step is 48 counts, so 48 times 250 is the whole travel.
+
+A write of 251 to 255 moves the gate to the same place as 250. Measured on a board, those targets settle on the same encoder count.
+
+The five steps are 6 mm at the top of 300 mm. A change to the scale would move every position already in use, so the limit is documented and not corrected.
 
 ### Event streams
 
