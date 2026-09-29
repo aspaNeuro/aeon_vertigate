@@ -1,7 +1,6 @@
 # VertiGate
 
 [![GitHub release](https://img.shields.io/github/v/release/SainsburyWellcomeCentre/aeon_vertigate?style=flat-square&cacheSeconds=3600)](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/releases)
-[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg?style=flat-square)](../LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/SainsburyWellcomeCentre/aeon_vertigate?style=flat-square)](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/issues)
 
 A [Harp](https://harp-tech.org/) device that controls a vertical gate. A Dynamixel XM430-W210 servo moves the gate.
@@ -418,12 +417,6 @@ Running a released firmware image needs no software beyond Bonsai. The rest is f
 - **uv**: [docs.astral.sh/uv](https://docs.astral.sh/uv/) (creates the `.venv` with `mpremote` and `pyserial`)
 - **Bonsai**: [bonsai-rx.org](https://bonsai-rx.org/) (to run the example workflow)
 - **.NET SDK 8 or later**: [dotnet.microsoft.com](https://dotnet.microsoft.com/download) (only to generate the interfaces or build the Bonsai package)
-
-## 📜 License
-
-**Sainsbury Wellcome Centre code, firmware, and software is released under the [BSD 3-Clause License](https://opensource.org/license/bsd-3-clause).**
-
-> For the full legal text, see [LICENSE](../LICENSE).
 
 ## 🤝 Contributing
 
