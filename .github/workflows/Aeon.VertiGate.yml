@@ -39,12 +39,12 @@ env:
 jobs:
   # =====================================================================================================================================================================
   # Verify generated code
+  #  __   __       _  __                                   _          _              _
+  #  \ \ / /__ _ _(_)/ _|_  _   __ _ ___ _ _  ___ _ _ __ _| |_ ___ __| |  __ ___  __| |___
+  #   \ V / -_) '_| |  _| || | / _` / -_) ' \/ -_) '_/ _` |  _/ -_) _` | / _/ _ \/ _` / -_)
+  #    \_/\___|_| |_|_|  \_, | \__, \___|_||_\___|_| \__,_|\__\___\__,_| \__\___/\__,_\___|
+  #                      |__/  |___/
   # =====================================================================================================================================================================
-  # Regenerate every target from device.yml and fail if the result differs from what is committed. Every build job depends on
-  # this, so no artifact is published from a tree whose generated code has drifted. device.behavior#39 does the same.
-  #
-  # The firmware source is not regenerated. There is no MicroPython target in the generator, so only the version module is
-  # covered. See harp-tech/generators#142 and issue #11.
   verify-generated:
     name: Verify generated code
     runs-on: ubuntu-latest
@@ -284,7 +284,8 @@ jobs:
         with:
           name: PythonPackages
           if-no-files-found: error
-          path: dist/*
+          # upload-artifact resolves paths against the workspace, not the job's working directory.
+          path: software/python/dist/*
 
   # =====================================================================================================================================================================
   # Publish release assets
