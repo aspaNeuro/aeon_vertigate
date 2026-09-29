@@ -3,7 +3,7 @@
 There are two ways to put VertiGate firmware on a board.
 
 **For development**, copy the Python files with `mpremote`, as the
-[README](README.md) describes. The files live on the board file system. You
+[README](index.md) describes. The files live on the board file system. You
 change one file and copy it again in a second.
 
 **For a release**, flash one `.uf2`. The image holds MicroPython, the VertiGate
@@ -139,7 +139,7 @@ and the board crashes at boot.
 
 To work on the firmware, flash a stock MicroPython build, then install the
 libraries and copy the files, as the
-[README](README.md) describes under **Developing the firmware**. The stock
+[README](index.md) describes under **Developing the firmware**. The stock
 image has no frozen application, so the file system is the only source.
 
 Flashing the stock build also clears the file system, so the libraries have to

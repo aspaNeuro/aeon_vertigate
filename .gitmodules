@@ -4,3 +4,6 @@
 [submodule "firmware/lib/micropython-dynamixel"]
 	path = firmware/lib/micropython-dynamixel
 	url = https://github.com/SainsburyWellcomeCentre/micropython-dynamixel.git
+[submodule "docs/harp-docfx"]
+	path = docs/harp-docfx
+	url = https://github.com/harp-tech/docfx-tools
