@@ -1,0 +1,58 @@
+[project]
+name = "swc-aeon-vertigate"
+dynamic = ["version"]
+description = "Interface for data acquisition and control of the VertiGate Harp device."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+  "Topic :: System :: Hardware :: Hardware Drivers",
+]
+# The generated interface needs these. harp-protocol and harp-device were split
+# out of harp-python in 0.5.0.
+dependencies = [
+  "harp-protocol>=0.5.0",
+  "harp-device>=0.5.0",
+  "numpy>=1.24",
+]
+
+[project.urls]
+Repository = "https://github.com/aspaNeuro/aeon_vertigate"
+"Bug Tracker" = "https://github.com/aspaNeuro/aeon_vertigate/issues"
+
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+# harp-tech/protocol#145 asks for one version per repository, so the version
+# comes from the git tag and not from this file. root is the repository root,
+# two levels up. The match pattern accepts only a semver tag, so a firmware or
+# hardware tag is never mistaken for a release. Our tags carry a v prefix,
+# which device.behavior's do not.
+root = "../.."
+git_describe_command = "git describe --dirty --tags --long --match v[0-9]*.[0-9]*.[0-9]*"
+
+[tool.setuptools.packages.find]
+# swc/, swc/aeon/ and swc/aeon/device/ carry no __init__.py. They are namespace
+# packages, the same way aeon_api lays out swc.aeon.io.
+where = ["src"]
+include = ["swc*"]
+
+[dependency-groups]
+# Everything tests/ needs, and nothing the published package needs. A
+# dependency group is not part of the wheel, unlike an optional extra, so a
+# consumer of the interface never sees these. harp-serial is the serial
+# transport the hardware test talks to a board over.
+#
+#     uv run --group dev pytest tests/
+#     uv run --group dev python tests/hwtest.py --port COM4
+dev = ["pytest>=8", "pyyaml>=6", "harp-serial>=0.5.0", "check-jsonschema>=0.33"]
+
+[tool.ruff]
+line-length = 108

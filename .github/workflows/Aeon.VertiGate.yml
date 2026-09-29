@@ -1,0 +1,612 @@
+# =======================================================================================================================================================================
+# Aeon.VertiGate CI/CD
+# =======================================================================================================================================================================
+# Index:
+# * Verify generated code
+# * Build firmware
+# * Build .NET
+# * Build Python
+# * Publish release assets
+# * Publish packages to GitHub
+# * Publish packages to NuGet.org
+# * Publish packages to PyPI
+# * Build documentation
+# * Render workflow images
+# * Publish documentation
+# =======================================================================================================================================================================
+# Note that this is a generic workflow meant for all Harp devices. Minor local modifications are fine, see https://github.com/bonsai-rx/prefect for more information.
+# The firmware is MicroPython. The firmware job builds a MicroPython image with the application and its libraries frozen in, and attaches the UF2 to releases.
+# =======================================================================================================================================================================
+name: Aeon.VertiGate
+on:
+  push:
+    # This prevents tag pushes from triggering this workflow
+    branches: ['**']
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      publish-documentation:
+        description: "Publish documentation to GitHub Pages?"
+        default: "false"
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: false
+  ContinuousIntegrationBuild: true
+  MICROPYTHON_VERSION: v1.29.0
+jobs:
+  # =====================================================================================================================================================================
+  # Verify generated code
+  #  __   __       _  __                                   _          _              _
+  #  \ \ / /__ _ _(_)/ _|_  _   __ _ ___ _ _  ___ _ _ __ _| |_ ___ __| |  __ ___  __| |___
+  #   \ V / -_) '_| |  _| || | / _` / -_) ' \/ -_) '_/ _` |  _/ -_) _` | / _/ _ \/ _` / -_)
+  #    \_/\___|_| |_|_|  \_, | \__, \___|_||_\___|_| \__,_|\__\___\__,_| \__\___/\__,_\___|
+  #                      |__/  |___/
+  # =====================================================================================================================================================================
+  verify-generated:
+    name: Verify generated code
+    runs-on: ubuntu-latest
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      - name: Set up .NET tools
+        run: dotnet tool restore
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+
+      # ----------------------------------------------------------------------- Regenerate
+      - name: Generate C# interface
+        run: dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
+
+      - name: Generate Python interface
+        run: dotnet harp.toolkit generate interface python device.yml --package --output software/python/src/swc/aeon/device/vertigate
+
+      - name: Generate firmware version module
+        run: uv run firmware/tools/firmware_version.py
+
+      # ----------------------------------------------------------------------- Verify
+      - name: Verify pre-generated code was up-to-date
+        id: verify-dist
+        run: |
+          git add . --intent-to-add --ignore-removal
+          git diff --name-status --exit-code
+
+  # =====================================================================================================================================================================
+  # Build firmware
+  #  ___      _ _    _    __ _
+  # | _ )_  _(_) |__| |  / _(_)_ _ _ ____ __ ____ _ _ _ ___
+  # | _ \ || | | / _` | |  _| | '_| '  \ V  V / _` | '_/ -_)
+  # |___/\_,_|_|_\__,_| |_| |_|_| |_|_|_\_/\_/\__,_|_| \___|
+  # =====================================================================================================================================================================
+  build-firmware:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - hardware-target: '0.1'
+            board: DYNAMIXEL_CONTROLLER
+    name: Build Firmware (hw${{matrix.hardware-target}})
+    runs-on: ubuntu-latest
+    needs: verify-generated
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+
+      # ----------------------------------------------------------------------- Configure build
+      # Also checks that on a release the tag's major.minor matches firmwareVersion in device.yml.
+      - name: Configure build
+        id: configure-build
+        uses: harp-tech/configure-build@v2
+
+      # ----------------------------------------------------------------------- Set up MicroPython
+      - name: Checkout MicroPython
+        uses: actions/checkout@v7
+        with:
+          repository: micropython/micropython
+          ref: ${{env.MICROPYTHON_VERSION}}
+          path: micropython
+
+      - name: Set up the rp2 toolchain
+        working-directory: micropython
+        run: tools/ci.sh rp2_setup
+
+      - name: Fetch MicroPython submodules
+        run: make -C micropython/ports/rp2 BOARD_DIR=${{github.workspace}}/firmware/boards/${{matrix.board}} submodules
+
+      - name: Build mpy-cross
+        run: make -C micropython/mpy-cross -j"$(nproc)"
+
+      # ----------------------------------------------------------------------- Build firmware
+      - name: Build firmware
+        id: build
+        run: make -C micropython/ports/rp2 BOARD_DIR=${{github.workspace}}/firmware/boards/${{matrix.board}} -j"$(nproc)"
+
+      # The versions in the file name are the ones frozen into the image. On a release, configure-build has
+      # already checked that they agree with the tag. Non-release builds carry a -preview suffix with the run number.
+      - name: Name firmware image
+        run: |
+          eval "$(sed -n 's/^\(FW_VERSION\|HW_VERSION\|HARP_VERSION\) = (\([0-9]*\), \([0-9]*\))$/\1=\2.\3/p' firmware/vertigate/_version.py)"
+          PREVIEW=""
+          if [ "$CiFirmwarePreviewVersion" != "v" ]; then PREVIEW="-preview$CiFirmwarePreviewVersion"; fi
+          NAME="VertiGate-fw$FW_VERSION-harp$HARP_VERSION-hw$HW_VERSION-ass0$PREVIEW.uf2"
+          mkdir -p artifacts/firmware
+          cp micropython/ports/rp2/build-${{matrix.board}}/firmware.uf2 "artifacts/firmware/$NAME"
+          ls -l artifacts/firmware
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect firmware image
+        uses: actions/upload-artifact@v7
+        if: steps.build.outcome == 'success' && always()
+        with:
+          name: Firmware-hw${{matrix.hardware-target}}
+          if-no-files-found: error
+          path: artifacts/firmware/*.uf2
+
+  # =====================================================================================================================================================================
+  # Build .NET
+  #  ___      _ _    _     _  _ ___ _____ 
+  # | _ )_  _(_) |__| |   | \| | __|_   _|
+  # | _ \ || | | / _` |  _| .` | _|  | |  
+  # |___/\_,_|_|_\__,_| (_)_|\_|___| |_|  
+  #                                       
+  # =====================================================================================================================================================================
+  build-dotnet:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: Windows x64
+            os: windows-latest
+          - name: Linux x64
+            os: ubuntu-latest
+        configuration: ['debug', 'release']
+        include:
+          - platform:
+              os: windows-latest
+            configuration: release
+            collect-packages: true
+    name: Build Interface (${{matrix.platform.name}} ${{matrix.configuration}})
+    runs-on: ${{matrix.platform.os}}
+    needs: verify-generated
+    outputs:
+      need-workflow-image-render: ${{steps.configure-build.outputs.need-workflow-image-render}}
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      - name: Set up .NET tools
+        run: dotnet tool restore
+
+      # ----------------------------------------------------------------------- Configure build
+      - name: Configure build
+        id: configure-build
+        uses: harp-tech/configure-build@v2
+
+      # ----------------------------------------------------------------------- Build interface package
+      - name: Restore
+        run: dotnet restore software/dotnet
+
+      - name: Build
+        run: dotnet build software/dotnet --no-restore --configuration ${{matrix.configuration}}
+
+      - name: Pack
+        id: pack
+        run: dotnet pack software/dotnet --no-restore --no-build --configuration ${{matrix.configuration}}
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect NuGet packages
+        uses: actions/upload-artifact@v7
+        if: matrix.collect-packages && steps.pack.outcome == 'success' && always()
+        with:
+          name: Packages
+          if-no-files-found: error
+          path: artifacts/package/${{matrix.configuration}}/**
+
+  # =====================================================================================================================================================================
+  # Build Python
+  #  ___      _ _    _   ___      _   _             
+  # | _ )_  _(_) |__| | | _ \_  _| |_| |_  ___ _ _  
+  # | _ \ || | | / _` | |  _/ || |  _| ' \/ _ \ ' \ 
+  # |___/\_,_|_|_\__,_| |_|  \_, |\__|_||_\___/_||_|
+  #                          |__/                   
+  # =====================================================================================================================================================================
+  build-python:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+        include:
+          - python-version: '3.13'
+            collect-packages: true
+    name: Build Python (${{matrix.python-version}})
+    runs-on: ubuntu-latest
+    needs: verify-generated
+    defaults:
+      run:
+        working-directory: software/python
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # setuptools-scm derives the package version from the repository tags,
+          # so the full history is needed. A shallow clone has none.
+          fetch-depth: 0
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+
+      # ----------------------------------------------------------------------- Build and test the interface
+      - name: Restore
+        run: uv sync --group dev --python ${{matrix.python-version}}
+
+      - name: Test
+        run: uv run --no-sync pytest tests/
+
+      - name: Build
+        id: build
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{github.event.release.tag_name}}
+        run: uv build
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect Python packages
+        uses: actions/upload-artifact@v7
+        if: matrix.collect-packages && steps.build.outcome == 'success' && always()
+        with:
+          name: PythonPackages
+          if-no-files-found: error
+          # upload-artifact resolves paths against the workspace, not the job's working directory.
+          path: software/python/dist/*
+
+  # =====================================================================================================================================================================
+  # Publish release assets
+  #  ___      _    _ _    _              _                                    _
+  # | _ \_  _| |__| (_)__| |_    _ _ ___| |___ __ _ ___ ___   __ _ ______ ___| |_ ___
+  # |  _/ || | '_ \ | (_-< ' \  | '_/ -_) / -_) _` (_-</ -_) / _` (_-<_-</ -_)  _(_-<
+  # |_|  \_,_|_.__/_|_/__/_||_| |_| \___|_\___\__,_/__/\___| \__,_/__/__/\___|\__/__/
+  # =====================================================================================================================================================================
+  publish-release-assets:
+    name: Publish release assets
+    runs-on: ubuntu-latest
+    needs: [build-firmware, build-dotnet, build-python]
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    steps:
+      # ----------------------------------------------------------------------- Download built assets
+      - name: Download firmware images
+        uses: actions/download-artifact@v8
+        with:
+          pattern: Firmware-hw*
+          merge-multiple: true
+          path: artifacts/firmware/
+
+      - name: Download NuGet packages
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      - name: Download Python packages
+        uses: actions/download-artifact@v8
+        with:
+          name: PythonPackages
+          path: dist/
+
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} artifacts/firmware/*.uf2 artifacts/packages/* dist/* --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
+
+  # =====================================================================================================================================================================
+  # Publish packages to GitHub
+  #  ___      _    _ _    _                    _                      _          ___ _ _   _  _      _
+  # | _ \_  _| |__| (_)__| |_    _ __  __ _ __| |____ _ __ _ ___ ___ | |_ ___   / __(_) |_| || |_  _| |__
+  # |  _/ || | '_ \ | (_-< ' \  | '_ \/ _` / _| / / _` / _` / -_|_-< |  _/ _ \ | (_ | |  _| __ | || | '_ \
+  # |_|  \_,_|_.__/_|_/__/_||_| | .__/\__,_\__|_\_\__,_\__, \___/__/  \__\___/  \___|_|\__|_||_|\_,_|_.__/
+  #                             |_|                    |___/
+  # =====================================================================================================================================================================
+  publish-github:
+    name: Publish packages to GitHub
+    runs-on: ubuntu-latest
+    needs: build-dotnet
+    permissions:
+      # Needed to upload to GitHub Packages
+      packages: write
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+      # ----------------------------------------------------------------------- Set up .NET
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Push to GitHub Packages
+      - name: Push to GitHub Packages
+        run: dotnet nuget push "artifacts/packages/*.nupkg" --skip-duplicate --no-symbols --api-key ${{secrets.GITHUB_TOKEN}} --source https://nuget.pkg.github.com/${{github.repository_owner}}
+        env:
+          # This is a workaround for https://github.com/NuGet/Home/issues/9775
+          DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
+
+  # =====================================================================================================================================================================
+  # Publish packages to NuGet.org
+  #  ___      _    _ _    _                    _                      _         _  _       ___     _
+  # | _ \_  _| |__| (_)__| |_    _ __  __ _ __| |____ _ __ _ ___ ___ | |_ ___  | \| |_  _ / __|___| |_   ___ _ _ __ _
+  # |  _/ || | '_ \ | (_-< ' \  | '_ \/ _` / _| / / _` / _` / -_|_-< |  _/ _ \ | .` | || | (_ / -_)  _|_/ _ \ '_/ _` |
+  # |_|  \_,_|_.__/_|_/__/_||_| | .__/\__,_\__|_\_\__,_\__, \___/__/  \__\___/ |_|\_|\_,_|\___\___|\__(_)___/_| \__, |
+  #                             |_|                    |___/                                                    |___/
+  # =====================================================================================================================================================================
+  publish-packages-nuget-org:
+    name: Publish packages to NuGet.org
+    runs-on: ubuntu-latest
+    environment: public-release
+    # A release ships the package and the firmware image together, so both must have built.
+    needs: [build-firmware, build-dotnet, build-python]
+    if: github.event_name == 'release'
+    steps:
+      # ----------------------------------------------------------------------- Set up .NET
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Push to NuGet.org
+      - name: Push to NuGet.org
+        run: dotnet nuget push "artifacts/packages/*.nupkg" --api-key ${{secrets.NUGET_API_KEY}} --source ${{vars.NUGET_API_URL}}
+        env:
+          # This is a workaround for https://github.com/NuGet/Home/issues/9775
+          DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
+  # =====================================================================================================================================================================
+  # Publish to PyPI
+  #  ___      _    _ _    _      _         ___      ___ ___ 
+  # | _ \_  _| |__| (_)__| |_   | |_ ___  | _ \_  _| _ \_ _|
+  # |  _/ || | '_ \ | (_-< ' \  |  _/ _ \ |  _/ || |  _/| | 
+  # |_|  \_,_|_.__/_|_/__/_||_|  \__\___/ |_|  \_, |_| |___|
+  #                                            |__/         
+  # =====================================================================================================================================================================
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [build-firmware, build-dotnet, build-python]
+    if: github.event_name == 'release'
+    environment: pypi
+    permissions:
+      # Needed by uv publish to exchange a token with PyPI trusted publishing
+      id-token: write
+    steps:
+
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: PythonPackages
+          path: dist/
+
+      - name: Verify the release tag was applied
+        run: |
+          if ls dist/*.dev* >/dev/null 2>&1; then
+            echo "::error::Built a development version, so setuptools-scm did not apply the release tag."
+            ls -1 dist/
+            exit 1
+          fi
+
+      # ----------------------------------------------------------------------- Publish
+      - name: Publish to PyPI
+        run: uv publish
+  # =====================================================================================================================================================================
+  # Build documentation
+  #  ___      _ _    _      _                            _        _   _
+  # | _ )_  _(_) |__| |  __| |___  __ _  _ _ __  ___ _ _| |_ __ _| |_(_)___ _ _
+  # | _ \ || | | / _` | / _` / _ \/ _| || | '  \/ -_) ' \  _/ _` |  _| / _ \ ' \
+  # |___/\_,_|_|_\__,_| \__,_\___/\__|\_,_|_|_|_\___|_||_\__\__,_|\__|_\___/_||_|
+  # =====================================================================================================================================================================
+  build-documentation:
+    name: Build documentation
+    runs-on: ubuntu-latest
+    needs: verify-generated
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      - name: Set up .NET tools
+        run: dotnet tool restore
+
+      # ----------------------------------------------------------------------- Configure build
+      - name: Configure build
+        id: configure-build
+        uses: bonsai-rx/configure-build@v2
+
+      # ----------------------------------------------------------------------- Restore
+      - name: Restore
+        run: dotnet restore software/dotnet
+
+      # ----------------------------------------------------------------------- Build metadata
+      - name: Build metadata
+        id: build-metadata
+        run: dotnet docfx metadata docs/docfx.json --noRestore
+
+      # ----------------------------------------------------------------------- Build documentation
+      - name: Build documentation
+        id: build-documentation
+        run: dotnet docfx build docs/docfx.json
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect documentation metadata
+        uses: actions/upload-artifact@v7
+        if: steps.build-metadata.outcome == 'success' && always()
+        with:
+          name: DocumentationMetadata
+          if-no-files-found: error
+          path: artifacts/docs/api/
+
+      - name: Collect documentation artifact
+        uses: actions/upload-artifact@v7
+        if: steps.build-documentation.outcome == 'success' && always()
+        with:
+          name: DocumentationWebsite
+          if-no-files-found: error
+          path: artifacts/docs/site/
+
+  # =====================================================================================================================================================================
+  # Render workflow images
+  #  ___             _                          _    __ _              _
+  # | _ \___ _ _  __| |___ _ _  __ __ _____ _ _| |__/ _| |_____ __ __ (_)_ __  __ _ __ _ ___ ___
+  # |   / -_) ' \/ _` / -_) '_| \ V  V / _ \ '_| / /  _| / _ \ V  V / | | '  \/ _` / _` / -_|_-<
+  # |_|_\___|_||_\__,_\___|_|    \_/\_/\___/_| |_\_\_| |_\___/\_/\_/  |_|_|_|_\__,_\__, \___/__/
+  #                                                                                |___/
+  # =====================================================================================================================================================================
+  workflow-images:
+    name: Render workflow images
+    runs-on: windows-latest
+    needs: build-dotnet
+    if: needs.build-dotnet.outputs.need-workflow-image-render == 'true'
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download packages for rendering
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Set up Bonsai environments
+      - name: Set up Bonsai environments
+        uses: bonsai-rx/setup-bonsai@v2
+        with:
+          environment-paths: '**/.bonsai/'
+          inject-packages: artifacts/packages/*.nupkg
+
+      # ----------------------------------------------------------------------- Render
+      - name: Render images
+        id: render
+        run: pwsh ./docs/export-images.ps1 -OutputFolder artifacts/docs/site/ -Verbose
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Collect images
+        uses: actions/upload-artifact@v7
+        if: steps.render.outcome == 'success' && always()
+        with:
+          name: DocumentationWorkflowImages
+          if-no-files-found: error
+          path: artifacts/docs/site/
+
+  # =====================================================================================================================================================================
+  # Publish documentation
+  #  ___      _    _ _    _         _                            _        _   _
+  # | _ \_  _| |__| (_)__| |_    __| |___  __ _  _ _ __  ___ _ _| |_ __ _| |_(_)___ _ _
+  # |  _/ || | '_ \ | (_-< ' \  / _` / _ \/ _| || | '  \/ -_) ' \  _/ _` |  _| / _ \ ' \
+  # |_|  \_,_|_.__/_|_/__/_||_| \__,_\___/\__|\_,_|_|_|_\___|_||_\__\__,_|\__|_\___/_||_|
+  # =====================================================================================================================================================================
+  publish-documentation:
+    name: Publish documentation
+    runs-on: ubuntu-latest
+    # Publishing is not strictly necessary here, but if we're going to do a public release we want to wait to publish the docs until it goes out
+    needs: [build-documentation, workflow-images, publish-packages-nuget-org, publish-pypi]
+    permissions:
+      # Both required by actions/deploy-pages
+      pages: write
+      id-token: write
+    environment:
+      # Intentionally not using the "default" github-pages environment as it's not compatible with this workflow
+      name: documentation-website
+      url: ${{steps.publish.outputs.page_url}}
+    # Only run if the workflow isn't dying and build-documentation was successful and either A) we're releasing or B) we have continuous deployment enabled
+    if: |
+      !cancelled() && !failure() && needs.build-documentation.result == 'success'
+      && (github.event_name == 'release'
+        || (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-documentation == 'true')
+        || (vars.CONTINUOUS_DOCUMENTATION && github.event_name != 'pull_request')
+      )
+    steps:
+      # ----------------------------------------------------------------------- Download documentation website components
+      # It is intentional that we use two independent download steps here as it ensures that workflow images are permitted
+      # to overwrite any conflicts in the docfx output but not the other way around.
+      - name: Download documentation website
+        uses: actions/download-artifact@v8
+        with:
+          name: DocumentationWebsite
+
+      - name: Download workflow images
+        if: ${{needs.workflow-images.result == 'success'}}
+        uses: actions/download-artifact@v8
+        with:
+          name: DocumentationWorkflowImages
+
+      # ----------------------------------------------------------------------- Collect artifacts
+      - name: Upload final documentation website artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: '.'
+
+      # ----------------------------------------------------------------------- Publish to GitHub Pages
+      - name: Publish to GitHub Pages
+        id: publish
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,5 @@
+@import "bonsai.css";
+
+[data-bs-theme="dark"] #logo {
+  content: url("logo-white.svg");
+}
