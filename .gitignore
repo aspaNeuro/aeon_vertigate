@@ -14,6 +14,7 @@ launchSettings.json
 .micropico
 firmware/typings/
 firmware/build/
+firmware/lib/
 firmware/vertigate/test.py
 __pycache__/
 *.pyc

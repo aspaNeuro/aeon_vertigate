@@ -6,9 +6,10 @@ include("$(PORT_DIR)/boards/manifest.py")
 # USB CDC device support from micropython-lib. microharp's transport needs it.
 require("usb-device-cdc")
 
-# The Harp core and the servo driver, pinned as git submodules.
-package("microharp", base_path="../../lib/micropython-microharp")
-package("dynamixel", base_path="../../lib/micropython-dynamixel")
+# The Harp core and the servo driver, installed into lib/ by uv from the commits pinned in
+# ../../pyproject.toml. See the libs group there for the command.
+package("microharp", base_path="../../lib")
+package("dynamixel", base_path="../../lib")
 
 # The application. A frozen main.py runs at boot.
 module("main.py", base_path="../../vertigate")

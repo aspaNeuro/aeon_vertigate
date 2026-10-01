@@ -60,12 +60,12 @@ The image runs its frozen `main.py` even when a `main.py` is on the file system,
 
    It holds `mpremote` and `pyserial`, pinned in `firmware/uv.lock`. The Python interface is a
    separate environment in `software/python/`, and is only needed to read data from a device.
-3. **Install the libraries.** Replace `COM3` with your port. The versions are the ones pinned as
-   submodules under `firmware/lib/`, which is what the release image is built from:
+3. **Install the libraries.** Replace `COM3` with your port. The commits are the ones
+   `firmware/pyproject.toml` pins, which is what the release image is built from:
 
    ```bash
-   uv run --directory firmware mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel@846451ee2db58569f1aae4c8527ef053a9df291a
-   uv run --directory firmware mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp@v2.1.0
+   uv run --directory firmware mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-dynamixel@b2e618a68d50ce621062492f37d501d137e42a54
+   uv run --directory firmware mpremote connect COM3 mip install github:SainsburyWellcomeCentre/micropython-microharp@3b71b85e24cb6a7f9c865c0ea67d3063e632e4e0
    ```
 
 4. **Copy the firmware.** From the repository root, run:
@@ -239,12 +239,17 @@ top, and the next run would overwrite the change.
 The release image is a MicroPython build with the application frozen in. The inputs are in `firmware/`:
 
 - `vertigate/`: the application.
-- `lib/`: `micropython-microharp` and `micropython-dynamixel` as git submodules, pinned to the versions the application is tested with. Clone with `git clone --recursive`, or run `git submodule update --init` in an existing clone.
+- `lib/`: `micropython-microharp` and `micropython-dynamixel`, installed by uv from the commits `pyproject.toml` pins. The directory is generated, not committed, so create it before building:
+
+  ```bash
+  uv pip install --directory firmware --target lib --no-deps --group libs
+  ```
 - `boards/DYNAMIXEL_CONTROLLER/`: the MicroPython board definition. It reuses the Seeed XIAO RP2350 board support, pins the flash size to 2 MB and the file system to 1 MiB, and names the modules to freeze in `manifest.py`.
 
 CI builds the image on every push and attaches it to releases. To build it locally on Linux, with `gcc-arm-none-eabi` 13, `cmake` and `picotool` installed (GCC 15 rejects a warning in the bundled mbedtls, so use the GCC 13 toolchain CI uses):
 
 ```bash
+uv pip install --directory firmware --target lib --no-deps --group libs
 git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git
 make -C micropython/ports/rp2 BOARD_DIR=$PWD/firmware/boards/DYNAMIXEL_CONTROLLER submodules
 make -C micropython/mpy-cross

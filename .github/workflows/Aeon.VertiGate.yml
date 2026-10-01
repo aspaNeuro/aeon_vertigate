@@ -103,12 +103,13 @@ jobs:
       # ----------------------------------------------------------------------- Checkout
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       # ----------------------------------------------------------------------- Set up tools
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.3.2
+
+      - name: Install the firmware libraries
+        run: uv pip install --directory firmware --target lib --no-deps --group libs
 
       # ----------------------------------------------------------------------- Configure build
       # Also checks that on a release the tag's major.minor matches firmwareVersion in device.yml.
