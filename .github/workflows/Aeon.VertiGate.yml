@@ -64,7 +64,7 @@ jobs:
       # ----------------------------------------------------------------------- Regenerate
 
       - name: Generate C# interface
-        run: dotnet harp.toolkit generate interface csharp -o software/dotnet/${{github.workflow}}
+        run: dotnet harp.toolkit generate interface csharp -o software/dotnet/${{github.workflow}} --namespace ${{github.workflow}}
 
       - name: Generate Python interface
         run: dotnet harp.toolkit generate interface python --package -o software/python/src/swc/aeon/device/vertigate
