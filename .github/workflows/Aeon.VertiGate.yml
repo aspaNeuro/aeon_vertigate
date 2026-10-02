@@ -2,16 +2,12 @@
 # Aeon.VertiGate CI/CD
 # =======================================================================================================================================================================
 # Index:
-# * Verify generated code
 # * Build firmware
-# * Build .NET
-# * Build Python
-# * Publish release assets
-# * Publish packages to GitHub
-# * Publish packages to NuGet.org
-# * Publish packages to PyPI
+# * Build interface
 # * Build documentation
 # * Render workflow images
+# * Publish packages to GitHub
+# * Publish packages to NuGet.org
 # * Publish documentation
 # =======================================================================================================================================================================
 # Note that this is a generic workflow meant for all Harp devices. Minor local modifications are fine, see https://github.com/bonsai-rx/prefect for more information.
@@ -39,11 +35,11 @@ env:
 jobs:
   # =====================================================================================================================================================================
   # Verify generated code
-  #  __   __       _  __                                   _          _              _
-  #  \ \ / /__ _ _(_)/ _|_  _   __ _ ___ _ _  ___ _ _ __ _| |_ ___ __| |  __ ___  __| |___
-  #   \ V / -_) '_| |  _| || | / _` / -_) ' \/ -_) '_/ _` |  _/ -_) _` | / _/ _ \/ _` / -_)
-  #    \_/\___|_| |_|_|  \_, | \__, \___|_||_\___|_| \__,_|\__\___\__,_| \__\___/\__,_\___|
-  #                      |__/  |___/
+  # __   __       _  __                                   _          _              _     
+  # \ \ / /__ _ _(_)/ _|_  _   __ _ ___ _ _  ___ _ _ __ _| |_ ___ __| |  __ ___  __| |___ 
+  #  \ V / -_) '_| |  _| || | / _` / -_) ' \/ -_) '_/ _` |  _/ -_) _` | / _/ _ \/ _` / -_)
+  #   \_/\___|_| |_|_|  \_, | \__, \___|_||_\___|_| \__,_|\__\___\__,_| \__\___/\__,_\___|
+  #                     |__/  |___/                                                       
   # =====================================================================================================================================================================
   verify-generated:
     name: Verify generated code
@@ -66,11 +62,12 @@ jobs:
         uses: astral-sh/setup-uv@v8.3.2
 
       # ----------------------------------------------------------------------- Regenerate
+
       - name: Generate C# interface
-        run: dotnet harp.toolkit generate interface csharp device.yml --namespace Aeon.VertiGate --output software/dotnet/Aeon.VertiGate
+        run: dotnet harp.toolkit generate interface csharp -o software/dotnet/${{github.workflow}}
 
       - name: Generate Python interface
-        run: dotnet harp.toolkit generate interface python device.yml --package --output software/python/src/swc/aeon/device/vertigate
+        run: dotnet harp.toolkit generate interface python --package -o software/python/src/swc/aeon/device/vertigate
 
       - name: Generate firmware version module
         run: uv run firmware/tools/firmware_version.py
@@ -112,7 +109,6 @@ jobs:
         run: uv pip install --directory firmware --target lib --no-deps --group libs
 
       # ----------------------------------------------------------------------- Configure build
-      # Also checks that on a release the tag's major.minor matches firmwareVersion in device.yml.
       - name: Configure build
         id: configure-build
         uses: harp-tech/configure-build@v2
@@ -140,8 +136,6 @@ jobs:
         id: build
         run: make -C micropython/ports/rp2 BOARD_DIR=${{github.workspace}}/firmware/boards/${{matrix.board}} -j"$(nproc)"
 
-      # The versions in the file name are the ones frozen into the image. On a release, configure-build has
-      # already checked that they agree with the tag. Non-release builds carry a -preview suffix with the run number.
       - name: Name firmware image
         run: |
           eval "$(sed -n 's/^\(FW_VERSION\|HW_VERSION\|HARP_VERSION\) = (\([0-9]*\), \([0-9]*\))$/\1=\2.\3/p' firmware/vertigate/_version.py)"
@@ -161,6 +155,13 @@ jobs:
           if-no-files-found: error
           path: artifacts/firmware/*.uf2
 
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} artifacts/firmware/*.uf2 --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
+
   # =====================================================================================================================================================================
   # Build .NET
   #  ___      _ _    _     _  _ ___ _____ 
@@ -178,14 +179,16 @@ jobs:
             os: windows-latest
           - name: Linux x64
             os: ubuntu-latest
+          - name: macOS x64
+            os: macos-latest
         configuration: ['debug', 'release']
         include:
           - platform:
               os: windows-latest
             configuration: release
             collect-packages: true
-    name: Build Interface (${{matrix.platform.name}} ${{matrix.configuration}})
-    runs-on: ${{matrix.platform.os}}
+    name: Build .NET (${{ matrix.platform.name }} ${{ matrix.configuration }})
+    runs-on: ${{ matrix.platform.os }}
     needs: verify-generated
     outputs:
       need-workflow-image-render: ${{steps.configure-build.outputs.need-workflow-image-render}}
@@ -209,13 +212,13 @@ jobs:
         uses: harp-tech/configure-build@v2
 
       # ----------------------------------------------------------------------- Build interface package
-      - name: Restore
+      - name: Restore interface
         run: dotnet restore software/dotnet
 
-      - name: Build
+      - name: Build interface
         run: dotnet build software/dotnet --no-restore --configuration ${{matrix.configuration}}
 
-      - name: Pack
+      - name: Pack interface
         id: pack
         run: dotnet pack software/dotnet --no-restore --no-build --configuration ${{matrix.configuration}}
 
@@ -227,6 +230,13 @@ jobs:
           name: Packages
           if-no-files-found: error
           path: artifacts/package/${{matrix.configuration}}/**
+
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        if: matrix.collect-packages && steps.pack.outcome == 'success' && github.event_name == 'release'
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} artifacts/package/${{matrix.configuration}}/** --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
 
   # =====================================================================================================================================================================
   # Build Python
@@ -241,9 +251,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.11', '3.12', '3.13']
-        include:
-          - python-version: '3.13'
-            collect-packages: true
     name: Build Python (${{matrix.python-version}})
     runs-on: ubuntu-latest
     needs: verify-generated
@@ -255,8 +262,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          # setuptools-scm derives the package version from the repository tags,
-          # so the full history is needed. A shallow clone has none.
+          # setuptools-scm derives the package version from the repository tags
           fetch-depth: 0
 
       # ----------------------------------------------------------------------- Set up tools
@@ -265,189 +271,16 @@ jobs:
         with:
           enable-cache: true
 
-      # ----------------------------------------------------------------------- Build and test the interface
-      - name: Restore
+      # ----------------------------------------------------------------------- Build interface package
+      - name: Restore interface
         run: uv sync --group dev --python ${{matrix.python-version}}
 
-      - name: Test
-        run: uv run --no-sync pytest tests/
+      - name: Test interface
+        run: uv run pytest
 
-      - name: Build
-        id: build
-        env:
-          SETUPTOOLS_SCM_PRETEND_VERSION: ${{github.event.release.tag_name}}
+      - name: Build interface
         run: uv build
 
-      # ----------------------------------------------------------------------- Collect artifacts
-      - name: Collect Python packages
-        uses: actions/upload-artifact@v7
-        if: matrix.collect-packages && steps.build.outcome == 'success' && always()
-        with:
-          name: PythonPackages
-          if-no-files-found: error
-          # upload-artifact resolves paths against the workspace, not the job's working directory.
-          path: software/python/dist/*
-
-  # =====================================================================================================================================================================
-  # Publish release assets
-  #  ___      _    _ _    _              _                                    _
-  # | _ \_  _| |__| (_)__| |_    _ _ ___| |___ __ _ ___ ___   __ _ ______ ___| |_ ___
-  # |  _/ || | '_ \ | (_-< ' \  | '_/ -_) / -_) _` (_-</ -_) / _` (_-<_-</ -_)  _(_-<
-  # |_|  \_,_|_.__/_|_/__/_||_| |_| \___|_\___\__,_/__/\___| \__,_/__/__/\___|\__/__/
-  # =====================================================================================================================================================================
-  publish-release-assets:
-    name: Publish release assets
-    runs-on: ubuntu-latest
-    needs: [build-firmware, build-dotnet, build-python]
-    if: github.event_name == 'release'
-    permissions:
-      contents: write
-    steps:
-      # ----------------------------------------------------------------------- Download built assets
-      - name: Download firmware images
-        uses: actions/download-artifact@v8
-        with:
-          pattern: Firmware-hw*
-          merge-multiple: true
-          path: artifacts/firmware/
-
-      - name: Download NuGet packages
-        uses: actions/download-artifact@v8
-        with:
-          name: Packages
-          path: artifacts/packages/
-
-      - name: Download Python packages
-        uses: actions/download-artifact@v8
-        with:
-          name: PythonPackages
-          path: dist/
-
-      # ----------------------------------------------------------------------- Upload release assets
-      - name: Upload release assets
-        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} artifacts/firmware/*.uf2 artifacts/packages/* dist/* --clobber
-        env:
-          GH_TOKEN: ${{github.token}}
-
-  # =====================================================================================================================================================================
-  # Publish packages to GitHub
-  #  ___      _    _ _    _                    _                      _          ___ _ _   _  _      _
-  # | _ \_  _| |__| (_)__| |_    _ __  __ _ __| |____ _ __ _ ___ ___ | |_ ___   / __(_) |_| || |_  _| |__
-  # |  _/ || | '_ \ | (_-< ' \  | '_ \/ _` / _| / / _` / _` / -_|_-< |  _/ _ \ | (_ | |  _| __ | || | '_ \
-  # |_|  \_,_|_.__/_|_/__/_||_| | .__/\__,_\__|_\_\__,_\__, \___/__/  \__\___/  \___|_|\__|_||_|\_,_|_.__/
-  #                             |_|                    |___/
-  # =====================================================================================================================================================================
-  publish-github:
-    name: Publish packages to GitHub
-    runs-on: ubuntu-latest
-    needs: build-dotnet
-    permissions:
-      # Needed to upload to GitHub Packages
-      packages: write
-    if: github.event_name == 'push' || github.event_name == 'release'
-    steps:
-      # ----------------------------------------------------------------------- Set up .NET
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 8.x
-
-      # ----------------------------------------------------------------------- Download built packages
-      - name: Download built packages
-        uses: actions/download-artifact@v8
-        with:
-          name: Packages
-          path: artifacts/packages/
-
-      # ----------------------------------------------------------------------- Push to GitHub Packages
-      - name: Push to GitHub Packages
-        run: dotnet nuget push "artifacts/packages/*.nupkg" --skip-duplicate --no-symbols --api-key ${{secrets.GITHUB_TOKEN}} --source https://nuget.pkg.github.com/${{github.repository_owner}}
-        env:
-          # This is a workaround for https://github.com/NuGet/Home/issues/9775
-          DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
-
-  # =====================================================================================================================================================================
-  # Publish packages to NuGet.org
-  #  ___      _    _ _    _                    _                      _         _  _       ___     _
-  # | _ \_  _| |__| (_)__| |_    _ __  __ _ __| |____ _ __ _ ___ ___ | |_ ___  | \| |_  _ / __|___| |_   ___ _ _ __ _
-  # |  _/ || | '_ \ | (_-< ' \  | '_ \/ _` / _| / / _` / _` / -_|_-< |  _/ _ \ | .` | || | (_ / -_)  _|_/ _ \ '_/ _` |
-  # |_|  \_,_|_.__/_|_/__/_||_| | .__/\__,_\__|_\_\__,_\__, \___/__/  \__\___/ |_|\_|\_,_|\___\___|\__(_)___/_| \__, |
-  #                             |_|                    |___/                                                    |___/
-  # =====================================================================================================================================================================
-  publish-packages-nuget-org:
-    name: Publish packages to NuGet.org
-    runs-on: ubuntu-latest
-    environment: public-release
-    # A release ships the package and the firmware image together, so both must have built.
-    needs: [build-firmware, build-dotnet, build-python]
-    if: github.event_name == 'release'
-    steps:
-      # ----------------------------------------------------------------------- Set up .NET
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 8.x
-
-      # ----------------------------------------------------------------------- Download built packages
-      - name: Download built packages
-        uses: actions/download-artifact@v8
-        with:
-          name: Packages
-          path: artifacts/packages/
-
-      # ----------------------------------------------------------------------- Push to NuGet.org
-      - name: Push to NuGet.org
-        run: dotnet nuget push "artifacts/packages/*.nupkg" --api-key ${{secrets.NUGET_API_KEY}} --source ${{vars.NUGET_API_URL}}
-        env:
-          # This is a workaround for https://github.com/NuGet/Home/issues/9775
-          DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
-  # =====================================================================================================================================================================
-  # Publish to PyPI
-  #  ___      _    _ _    _      _         ___      ___ ___ 
-  # | _ \_  _| |__| (_)__| |_   | |_ ___  | _ \_  _| _ \_ _|
-  # |  _/ || | '_ \ | (_-< ' \  |  _/ _ \ |  _/ || |  _/| | 
-  # |_|  \_,_|_.__/_|_/__/_||_|  \__\___/ |_|  \_, |_| |___|
-  #                                            |__/         
-  # =====================================================================================================================================================================
-  publish-pypi:
-    name: Publish to PyPI
-    runs-on: ubuntu-latest
-    needs: [build-firmware, build-dotnet, build-python]
-    if: github.event_name == 'release'
-    environment: pypi
-    permissions:
-      # Needed by uv publish to exchange a token with PyPI trusted publishing
-      id-token: write
-    steps:
-
-      # ----------------------------------------------------------------------- Checkout
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      # ----------------------------------------------------------------------- Set up tools
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v8.3.2
-        with:
-          enable-cache: true
-
-      # ----------------------------------------------------------------------- Download built packages
-      - name: Download built packages
-        uses: actions/download-artifact@v8
-        with:
-          name: PythonPackages
-          path: dist/
-
-      - name: Verify the release tag was applied
-        run: |
-          if ls dist/*.dev* >/dev/null 2>&1; then
-            echo "::error::Built a development version, so setuptools-scm did not apply the release tag."
-            ls -1 dist/
-            exit 1
-          fi
-
-      # ----------------------------------------------------------------------- Publish
-      - name: Publish to PyPI
-        run: uv publish
   # =====================================================================================================================================================================
   # Build documentation
   #  ___      _ _    _      _                            _        _   _
@@ -560,6 +393,145 @@ jobs:
           path: artifacts/docs/site/
 
   # =====================================================================================================================================================================
+  # Publish packages to GitHub
+  #  ___      _    _ _    _                    _                      _          ___ _ _   _  _      _
+  # | _ \_  _| |__| (_)__| |_    _ __  __ _ __| |____ _ __ _ ___ ___ | |_ ___   / __(_) |_| || |_  _| |__
+  # |  _/ || | '_ \ | (_-< ' \  | '_ \/ _` / _| / / _` / _` / -_|_-< |  _/ _ \ | (_ | |  _| __ | || | '_ \
+  # |_|  \_,_|_.__/_|_/__/_||_| | .__/\__,_\__|_\_\__,_\__, \___/__/  \__\___/  \___|_|\__|_||_|\_,_|_.__/
+  #                             |_|                    |___/
+  # =====================================================================================================================================================================
+  publish-github:
+    name: Publish packages to GitHub
+    runs-on: ubuntu-latest
+    needs: build-dotnet
+    permissions:
+      # Needed to attach files to releases
+      contents: write
+      # Needed to upload to GitHub Packages
+      packages: write
+    if: github.event_name == 'push' || github.event_name == 'release'
+    steps:
+      # ----------------------------------------------------------------------- Set up .NET
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} artifacts/packages/* --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
+
+      # ----------------------------------------------------------------------- Push to GitHub Packages
+      - name: Push to GitHub Packages
+        run: dotnet nuget push "artifacts/packages/*.nupkg" --skip-duplicate --no-symbols --api-key ${{secrets.GITHUB_TOKEN}} --source https://nuget.pkg.github.com/${{github.repository_owner}}
+        env:
+          # This is a workaround for https://github.com/NuGet/Home/issues/9775
+          DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
+
+  # =====================================================================================================================================================================
+  # Publish packages to NuGet.org
+  #  ___      _    _ _    _                    _                      _         _  _       ___     _
+  # | _ \_  _| |__| (_)__| |_    _ __  __ _ __| |____ _ __ _ ___ ___ | |_ ___  | \| |_  _ / __|___| |_   ___ _ _ __ _
+  # |  _/ || | '_ \ | (_-< ' \  | '_ \/ _` / _| / / _` / _` / -_|_-< |  _/ _ \ | .` | || | (_ / -_)  _|_/ _ \ '_/ _` |
+  # |_|  \_,_|_.__/_|_/__/_||_| | .__/\__,_\__|_\_\__,_\__, \___/__/  \__\___/ |_|\_|\_,_|\___\___|\__(_)___/_| \__, |
+  #                             |_|                    |___/                                                    |___/
+  # =====================================================================================================================================================================
+  publish-packages-nuget-org:
+    name: Publish packages to NuGet.org
+    runs-on: ubuntu-latest
+    environment: public-release
+    needs: [build-firmware, build-dotnet]
+    if: github.event_name == 'release'
+    steps:
+      # ----------------------------------------------------------------------- Set up .NET
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.x
+
+      # ----------------------------------------------------------------------- Download built packages
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: Packages
+          path: artifacts/packages/
+
+      # ----------------------------------------------------------------------- Push to NuGet.org
+      - name: Push to NuGet.org
+        run: dotnet nuget push "artifacts/packages/*.nupkg" --api-key ${{secrets.NUGET_API_KEY}} --source ${{vars.NUGET_API_URL}}
+        env:
+          # This is a workaround for https://github.com/NuGet/Home/issues/9775
+          DOTNET_SYSTEM_NET_HTTP_USESOCKETSHTTPHANDLER: 0
+
+
+  # =====================================================================================================================================================================
+  # Publish to PyPI
+  #  ___      _    _ _    _      _         ___      ___ ___ 
+  # | _ \_  _| |__| (_)__| |_   | |_ ___  | _ \_  _| _ \_ _|
+  # |  _/ || | '_ \ | (_-< ' \  |  _/ _ \ |  _/ || |  _/| | 
+  # |_|  \_,_|_.__/_|_/__/_||_|  \__\___/ |_|  \_, |_| |___|
+  #                                            |__/         
+  # =====================================================================================================================================================================
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: build-python
+    if: github.event_name == 'release'
+    environment: pypi
+    permissions:
+      # Needed by uv publish to exchange a token with PyPI trusted publishing
+      id-token: write
+      # Needed to attach the distributions to the release
+      contents: write
+    defaults:
+      run:
+        working-directory: software/python
+    steps:
+      # ----------------------------------------------------------------------- Checkout
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # ----------------------------------------------------------------------- Set up tools
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+
+      # ----------------------------------------------------------------------- Build release distributions
+      - name: Build interface
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{github.event.release.tag_name}}
+        run: uv build
+
+      - name: Verify the release tag was applied
+        run: |
+          if ls dist/*.dev* >/dev/null 2>&1; then
+            echo "::error::Built a development version, so setuptools-scm did not apply the release tag."
+            ls -1 dist/
+            exit 1
+          fi
+
+      # ----------------------------------------------------------------------- Upload release assets
+      - name: Upload release assets
+        run: gh release upload --repo ${{github.repository}} ${{github.event.release.tag_name}} dist/* --clobber
+        env:
+          GH_TOKEN: ${{github.token}}
+
+      # ----------------------------------------------------------------------- Publish
+      - name: Publish to PyPI
+        run: uv publish
+
+  # =====================================================================================================================================================================
   # Publish documentation
   #  ___      _    _ _    _         _                            _        _   _
   # | _ \_  _| |__| (_)__| |_    __| |___  __ _  _ _ __  ___ _ _| |_ __ _| |_(_)___ _ _
@@ -570,7 +542,7 @@ jobs:
     name: Publish documentation
     runs-on: ubuntu-latest
     # Publishing is not strictly necessary here, but if we're going to do a public release we want to wait to publish the docs until it goes out
-    needs: [build-documentation, workflow-images, publish-packages-nuget-org, publish-pypi]
+    needs: [build-documentation, workflow-images, publish-packages-nuget-org]
     permissions:
       # Both required by actions/deploy-pages
       pages: write
