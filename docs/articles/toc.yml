@@ -1,2 +1,13 @@
 - name: Introduction
+- name: Overview
   href: ../index.md
+- name: Specs
+- name: VertiGate
+  href: vertigate-overview.md
+- name: Getting Started
+- name: Ports and Connections
+  href: connections.md
+- name: Installation
+  href: installation.md
+- name: Bonsai
+  href: harp-bonsai.md
