@@ -28,7 +28,7 @@ Each [release](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/release
    BOOTSEL). A drive named `RP2350` appears.
 2. **Erase the file system, first time only.** Do not use `flash_nuke.uf2`. That file is an
    RP2040 image, and this board is an RP2350, so the boot loader ignores it. Clear the file
-   system from the REPL instead, as [docs/firmware-image.md](firmware-image.md)
+   system from the REPL instead, as [docs/articles/installation.md](articles/installation.md)
    describes. A board straight from the factory needs nothing here.
 3. **Flash the image.** Copy the `.uf2` from the release to the drive. The board reboots.
 4. **Check the ports.** The board shows **two** COM ports. The first is the MicroPython REPL.
