@@ -7,7 +7,7 @@ Bonsai is a visual reactive programming language for interactive experiments and
 
 ### First Steps
 
-We use a small example to connect to the device and test it in Bonsai. The example reads the state of the gate and shows it as it changes. We return to this example in more detail in the "Bonsai Workflows" section.
+We use a small example to connect to the device and test it in Bonsai. The example reads the state of the gate and shows it as it changes. We return to this example in more detail in the "Workflow" section.
 
 Before you begin:
 
@@ -46,7 +46,7 @@ The device is ready to use. If an error appears in Bonsai instead, read the [tro
 > [!NOTE]
 > If the gate reports `Error`, the servo did not answer. The device still starts, and every register still reads back, so this is the expected result when no servo is attached. Check the [servo connection](connections.md?tabs=servo#connections), then write `Calibrate`.
 
-Next, we suggest the "Bonsai Workflows" section if you are not familiar with Harp devices in Bonsai.
+Next, we suggest the [Workflow](about-these-examples.md) section if you are not familiar with Harp devices in Bonsai.
 
 If you already have experience with Harp devices, you can read the [register table](xref:Aeon.VertiGate) in the reference and use the device functionality directly.
 

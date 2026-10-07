@@ -1,6 +1,6 @@
 ## About These Examples
 
-The following "Bonsai Workflows" section covers how to operate the device, grouped into separate articles by functionality.
+This section covers how to operate the device in Bonsai, grouped into separate articles by functionality.
 
 Each article begins with a complete top level workflow that you can copy and paste into Bonsai to get started immediately. Every workflow is made up of these three basic building blocks:
 

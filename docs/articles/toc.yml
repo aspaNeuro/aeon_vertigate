@@ -10,20 +10,21 @@
 - name: Installation
   href: installation.md
 - name: Bonsai
+- name: First Steps
   href: harp-bonsai.md
-- name: Bonsai Workflows
-- name: About These Examples
+- name: Workflows
   href: about-these-examples.md
-- name: Move the Gate
-  href: move-the-gate.md
-- name: Enable the Motor
-  href: enable-the-motor.md
-- name: Calibrate the Gate
-  href: calibrate-the-gate.md
-- name: Tune the Motion
-  href: tune-the-motion.md
-- name: Monitor the Servo
-  href: monitor-the-servo.md
+  items:
+    - name: Move the Gate
+      href: move-the-gate.md
+    - name: Enable the Motor
+      href: enable-the-motor.md
+    - name: Calibrate the Gate
+      href: calibrate-the-gate.md
+    - name: Tune the Motion
+      href: tune-the-motion.md
+    - name: Monitor the Servo
+      href: monitor-the-servo.md
 - name: Data Management
 - name: Logging and Analysis
   href: logging-analysis.md
