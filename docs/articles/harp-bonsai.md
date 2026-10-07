@@ -33,13 +33,13 @@ Before you begin:
 A [visualizer](xref:Bonsai.Design.VisualizerWindow) opens when the workflow starts and shows the state of the gate. The device sends the value of every register when Bonsai connects, so a value appears at once, and a new one appears on every change:
 
 ```text
-Idle
-Calibrating
-Down
+Down@12.3456
 ```
 
+The first part is the gate state, and the second is the timestamp on the device clock.
+
 > [!WARNING]
-> **TODO**: Confirm the exact layout the visualizer prints for a timestamped enum, and replace the sample above with a real capture. The state names are from `device.yml` and are correct. The arrangement of the timestamp column is not confirmed.
+> **TODO**: Replace the sample above with a real capture from a board. The state names come from `device.yml` and are correct, and the `payload@timestamp` shape is the standard Harp visualizer format, but this exact line was not captured from hardware.
 
 The device is ready to use. If an error appears in Bonsai instead, read the [troubleshooting](troubleshooting.md) article.
 

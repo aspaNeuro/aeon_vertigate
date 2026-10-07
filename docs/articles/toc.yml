@@ -11,3 +11,22 @@
   href: installation.md
 - name: Bonsai
   href: harp-bonsai.md
+- name: Bonsai Workflows
+- name: About These Examples
+  href: about-these-examples.md
+- name: Move the Gate
+  href: move-the-gate.md
+- name: Enable the Motor
+  href: enable-the-motor.md
+- name: Calibrate the Gate
+  href: calibrate-the-gate.md
+- name: Tune the Motion
+  href: tune-the-motion.md
+- name: Monitor the Servo
+  href: monitor-the-servo.md
+- name: Data Management
+- name: Logging and Analysis
+  href: logging-analysis.md
+- name: Troubleshooting
+- name: Indicators and Errors
+  href: troubleshooting.md
