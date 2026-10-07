@@ -15,7 +15,7 @@ The complete workflow is shown below. Copy and paste it into Bonsai, or build ea
 
 ### Set the Speed
 
-`Speed` maps onto the profile velocity of the servo. One count is 0.38 mm/s.
+`Speed` maps onto the profile velocity of the servo. Each count adds 0.38 mm/s.
 
 :::workflow
 ![Set the Speed](../workflows/tunethemotion-speed.bonsai)
@@ -24,7 +24,7 @@ The complete workflow is shown below. Copy and paste it into Bonsai, or build ea
 - Insert a [`KeyDown`] operator and set the `Filter` property to `A`.
 - Insert a [`CreateMessage`] operator and configure these properties:
     - `Payload` - Select `CreateSpeedPayload`.
-    - `Speed` - Set it to 120, which is about 46 mm/s.
+    - `Speed` - Set it to 120, which is about half of the range.
 - Insert a [`MulticastSubject`] operator and set the `Name` property to `VertiGate Commands`.
 
 Run the workflow and press <kbd>A</kbd>. The next movement runs at the new speed.

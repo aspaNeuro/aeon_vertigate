@@ -175,7 +175,7 @@ class GateState(RegisterBase[GateStatus]):
 
 
 class Speed(RegisterU8):
-    """Movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s."""
+    """Movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled."""
 
     address: ClassVar[int] = 35
 

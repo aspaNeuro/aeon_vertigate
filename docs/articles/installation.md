@@ -87,7 +87,13 @@ This removes the firmware files, `lib/`, `settings.json`, and `error.log`. A boa
 
 Four things say the image is good.
 
-- **Two serial ports appear.** This is the real test. A frozen `main.py` starts differently from a file system `main.py`, so two ports prove that the frozen code runs.
+- **The board reports its own name.** This is the real test. A board running the release image names itself `Dynamixel Controller`. A board running a stock MicroPython build names itself after that build, for example `Seeed XIAO RP2350`. Read it over the REPL port:
+
+  ```bash
+  uv run --project firmware mpremote connect COM3 resume exec "import os; print(os.uname().machine)"
+  ```
+
+- **Two serial ports appear.** Both ports come up either way, because `main.py` creates the second one whether it is frozen or on the file system. Two ports mean the application started. They do not tell you which copy of it started.
 - **The hardware test passes.** Use the Harp port, not the REPL port:
 
   ```bash

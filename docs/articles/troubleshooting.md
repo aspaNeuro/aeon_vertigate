@@ -26,7 +26,39 @@ A: One possible reason is that the motor is off. `DisableMotor` is a state, not 
 
 **Q: `GateState` reports `Error`.**
 
-A: The servo did not answer. Check the power and the data connection to the servo, and confirm that the servo is set to ID 1. The device still starts and all registers still read back, so this state is also what you see with no servo attached. After you correct the connection, write `Calibrate` to recover.
+A: The servo did not answer. The device still starts and every register still reads back, so this is also what you see with no servo attached. After you correct the problem, write `Calibrate` to recover.
+
+Check the power and the data connection first. If both are good, the servo is probably set to the wrong ID or the wrong baud rate. The firmware opens the bus at 1 Mbaud and addresses ID 1, and it does not search for anything else. A servo from a different rig, or one straight from the factory at 57600, is silent.
+
+To find out what is on the bus, scan it from the REPL port:
+
+```python
+from machine import UART, Pin
+from dynamixel import Dynamixel
+
+dxl = Dynamixel(UART(1, baudrate=1000000, tx=Pin(8), rx=Pin(9)))
+for baud in (9600, 57600, 115200, 1000000, 2000000, 3000000, 4000000):
+    if dxl.ping(baud):
+        print("found id", dxl.id, "model", dxl.model, "at", baud, "baud")
+```
+
+Save it as `dxlscan.py` and run it with `uv run --project firmware mpremote connect COM3 resume run dxlscan.py`. A broadcast ping answers whatever the ID is.
+
+If the scan finds the servo at the wrong rate, set the Baud Rate register to code 3, which is 1 Mbaud:
+
+```python
+from dynamixel.table import ControlTableItem
+
+dxl.ping(57600)                 # the rate the scan reported
+dxl.torque_enabled = False      # EEPROM writes are refused while torque is on
+dxl._write_register(ControlTableItem.BAUD_RATE, 3)
+print(dxl.ping(1000000))        # True once it has switched
+```
+
+Reset the board afterwards, so the firmware configures the servo and homes the gate.
+
+> [!NOTE]
+> `mpremote` stops the running firmware while it holds the REPL, so the Harp port disappears during a scan. Reset the board when you finish. If the port does not come back, unplug the board and plug it in again.
 
 **Q: The position stream shows nothing while the gate sits still.**
 

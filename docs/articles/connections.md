@@ -15,6 +15,8 @@ The board presents **two** serial ports over this one connector. The first is th
 
 **Servo (GPIO 8 and GPIO 9)** - The half-duplex TTL bus to the Dynamixel XM430-W210 servo, at 1 Mbaud. The servo moves the gate and reports its own position, voltage, temperature, and current. Refer to the [Move the Gate](move-the-gate.md) article to command it from Bonsai.
 
+The servo must be set to **ID 1** and **1 Mbaud**. The firmware opens the bus at that rate and addresses that ID, and it does not search for others. A servo on any other setting does not answer, and the gate reports `Error`. [Indicators and Errors](troubleshooting.md#device-errors) covers how to find and correct this.
+
 **Clock input (GPIO 1)** - The Harp synchronization clock input, at 100 kbaud. Connect it to a Harp clock generator to put the VertiGate on the same clock as the rest of the rig.
 
 > [!WARNING]
@@ -40,8 +42,10 @@ The board presents **two** serial ports over this one connector. The first is th
 2. Power the servo from its own supply. The servo draws far more current than USB provides.
 3. Refer to the [Move the Gate](move-the-gate.md) article to command the gate in Bonsai.
 
+The servo runs at 12 V. A working rig was measured at 12.2 V at the servo on 2026-10-07.
+
 > [!WARNING]
-> **TODO**: State the servo supply voltage and the current budget, and say whether the board passes power through to the servo or expects a separate supply. Confirm the servo ID. The firmware addresses the servo at ID 1 ([gate.py:71](https://github.com/SainsburyWellcomeCentre/aeon_vertigate/blob/main/firmware/vertigate/gate.py#L71)), so a servo at any other ID does not answer.
+> **TODO**: State the current budget, and say whether the board passes power through to the servo or expects a separate supply. The 12 V figure above is one measurement, not a specification.
 
 # [Harp Synchronization](#tab/harpsynchronization)
 
