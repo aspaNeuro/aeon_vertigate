@@ -1,7 +1,12 @@
 <Project>
   <PropertyGroup>
     <PackageTags>Aeon VertiGate Harp</PackageTags>
-    <PackageProjectUrl>https://aeon.swc.ucl.ac.uk/</PackageProjectUrl>
+    <!-- The repository, because it is the one link that is true today. The Aeon
+         site has no VertiGate page: aeon.swc.ucl.ac.uk/vertigate returns 404, as
+         does /devices. Point this at the documentation site once #29 settles
+         where that lives. Package metadata cannot be changed after a version is
+         published, so a dead link here is permanent. -->
+    <PackageProjectUrl>https://github.com/SainsburyWellcomeCentre/aeon_vertigate</PackageProjectUrl>
 
     <Authors>Sainsbury Wellcome Centre</Authors>
     <Copyright>Copyright © University College London and Contributors</Copyright>
