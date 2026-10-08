@@ -3,3 +3,9 @@
 [data-bs-theme="dark"] #logo {
   content: url("logo-white.svg");
 }
+
+/* The brand is a flex row, so the whitespace between the logo and the device
+   name collapses and the two touch. Space them explicitly. */
+.navbar-brand {
+  gap: 0.5rem;
+}

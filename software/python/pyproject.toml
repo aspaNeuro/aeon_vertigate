@@ -22,8 +22,8 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/aspaNeuro/aeon_vertigate"
-"Bug Tracker" = "https://github.com/aspaNeuro/aeon_vertigate/issues"
+Repository = "https://github.com/SainsburyWellcomeCentre/aeon_vertigate"
+"Bug Tracker" = "https://github.com/SainsburyWellcomeCentre/aeon_vertigate/issues"
 
 [build-system]
 requires = ["setuptools>=77", "setuptools-scm>=8"]
