@@ -1,2 +1,33 @@
 - name: Introduction
+- name: Overview
   href: ../index.md
+- name: Specs
+- name: VertiGate
+  href: vertigate-overview.md
+- name: Getting Started
+- name: Ports and Connections
+  href: connections.md
+- name: Installation
+  href: installation.md
+- name: Bonsai
+- name: First Steps
+  href: harp-bonsai.md
+- name: Workflows
+  href: about-these-examples.md
+  items:
+    - name: Move the Gate
+      href: move-the-gate.md
+    - name: Enable the Motor
+      href: enable-the-motor.md
+    - name: Calibrate the Gate
+      href: calibrate-the-gate.md
+    - name: Tune the Motion
+      href: tune-the-motion.md
+    - name: Monitor the Servo
+      href: monitor-the-servo.md
+- name: Data Management
+- name: Logging and Analysis
+  href: logging-analysis.md
+- name: Troubleshooting
+- name: Indicators and Errors
+  href: troubleshooting.md

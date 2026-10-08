@@ -684,9 +684,9 @@ namespace Aeon.VertiGate
     }
 
     /// <summary>
-    /// Represents a register that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+    /// Represents a register that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.
     /// </summary>
-    [Description("Movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.")]
+    [Description("Movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.")]
     public partial class Speed
     {
         /// <summary>
@@ -1610,18 +1610,18 @@ namespace Aeon.VertiGate
 
     /// <summary>
     /// Represents an operator that creates a message payload
-    /// that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+    /// that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.
     /// </summary>
     [DisplayName("SpeedPayload")]
-    [Description("Creates a message payload that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.")]
+    [Description("Creates a message payload that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.")]
     public partial class CreateSpeedPayload
     {
         /// <summary>
-        /// Gets or sets the value that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+        /// Gets or sets the value that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.
         /// </summary>
         [Range(min: 0, max: 255)]
         [Editor(DesignTypes.NumericUpDownEditor, DesignTypes.UITypeEditor)]
-        [Description("The value that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.")]
+        [Description("The value that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.")]
         public byte Speed { get; set; } = 255;
 
         /// <summary>
@@ -1634,7 +1634,7 @@ namespace Aeon.VertiGate
         }
 
         /// <summary>
-        /// Creates a message that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+        /// Creates a message that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.
         /// </summary>
         /// <param name="messageType">Specifies the type of the created message.</param>
         /// <returns>A new message for the Speed register.</returns>
@@ -1646,14 +1646,14 @@ namespace Aeon.VertiGate
 
     /// <summary>
     /// Represents an operator that creates a timestamped message payload
-    /// that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+    /// that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.
     /// </summary>
     [DisplayName("TimestampedSpeedPayload")]
-    [Description("Creates a timestamped message payload that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.")]
+    [Description("Creates a timestamped message payload that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.")]
     public partial class CreateTimestampedSpeedPayload : CreateSpeedPayload
     {
         /// <summary>
-        /// Creates a timestamped message that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count is 0.38 mm/s.
+        /// Creates a timestamped message that movement speed of the gate, mapped onto the Dynamixel profile velocity. One count adds 0.38 mm/s. A write of 0 is the slowest motion and not a stop, because the servo receives this value plus a fixed offset of 60. Use the Stop bit of Control to halt a movement. Writing this register switches the motor off and on, so the gate drops for a moment if it is holding a position. It leaves the motor off if MotorState is Disabled.
         /// </summary>
         /// <param name="timestamp">The timestamp of the message payload, in seconds.</param>
         /// <param name="messageType">Specifies the type of the created message.</param>
